@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -23,6 +23,8 @@ pub struct Skill {
     /// True when the skill is exactly one SKILL.md and nothing else.
     pub single_file: bool,
     pub editable: bool,
+    /// True when a skillOverrides entry or a disabled plugin turns it off.
+    pub disabled: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -78,8 +80,57 @@ pub fn extract_frontmatter(text: &str) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+/// skillOverrides from one settings file: skill name -> "off"/"on".
+fn read_overrides_file(file: &Path) -> HashMap<String, String> {
+    let Ok(text) = fs::read_to_string(file) else {
+        return HashMap::new();
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return HashMap::new();
+    };
+    v.get("skillOverrides")
+        .and_then(|o| o.as_object())
+        .map(|o| {
+            o.iter()
+                .filter_map(|(k, val)| val.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Merged skillOverrides for a `.claude`-style dir (settings.local.json wins).
+fn skill_overrides(claude_like_dir: &Path) -> HashMap<String, String> {
+    let mut merged = read_overrides_file(&claude_like_dir.join("settings.json"));
+    merged.extend(read_overrides_file(&claude_like_dir.join("settings.local.json")));
+    merged
+}
+
+/// Plugins turned off via enabledPlugins in user settings ("plugin@marketplace").
+fn disabled_plugins() -> HashSet<String> {
+    let Ok(claude) = claude_dir() else { return HashSet::new() };
+    let mut set = HashSet::new();
+    for name in ["settings.json", "settings.local.json"] {
+        let Ok(text) = fs::read_to_string(claude.join(name)) else { continue };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+        if let Some(obj) = v.get("enabledPlugins").and_then(|o| o.as_object()) {
+            for (key, val) in obj {
+                if val.as_bool() == Some(false) {
+                    set.insert(key.clone());
+                } else {
+                    set.remove(key);
+                }
+            }
+        }
+    }
+    set
+}
+
+fn is_off(overrides: &HashMap<String, String>, dir_name: &str) -> bool {
+    overrides.get(dir_name).map(|v| v == "off").unwrap_or(false)
+}
+
 /// Build a Skill from a directory that contains SKILL.md.
-fn load_skill(dir: &Path, editable: bool) -> Option<Skill> {
+fn load_skill(dir: &Path, editable: bool, disabled: bool) -> Option<Skill> {
     let skill_md = dir.join("SKILL.md");
     if !skill_md.is_file() {
         return None;
@@ -116,18 +167,27 @@ fn load_skill(dir: &Path, editable: bool) -> Option<Skill> {
         files,
         single_file,
         editable,
+        disabled,
     })
 }
 
 /// Scan a "skills root" — a directory whose children are skill directories.
-pub fn scan_skills_root(root: &Path, editable: bool) -> Vec<Skill> {
+/// `overrides` is the merged skillOverrides map governing this root.
+pub fn scan_skills_root(
+    root: &Path,
+    editable: bool,
+    overrides: &HashMap<String, String>,
+) -> Vec<Skill> {
     let Ok(entries) = fs::read_dir(root) else {
         return Vec::new();
     };
     let mut skills: Vec<Skill> = entries
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_dir())
-        .filter_map(|e| load_skill(&e.path(), editable))
+        .filter_map(|e| {
+            let disabled = is_off(overrides, &e.file_name().to_string_lossy());
+            load_skill(&e.path(), editable, disabled)
+        })
         .collect();
     skills.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     skills
@@ -149,13 +209,26 @@ fn claude_project_paths() -> Vec<PathBuf> {
         .unwrap_or_default()
 }
 
+/// "plugin@marketplace" derived from a path under plugins/cache, if possible.
+fn plugin_key(plugin_dir: &Path) -> Option<String> {
+    let comps: Vec<String> = plugin_dir
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().to_string())
+        .collect();
+    let cache_idx = comps.iter().position(|c| c == "cache")?;
+    let marketplace = comps.get(cache_idx + 1)?;
+    let plugin = comps.get(cache_idx + 2)?;
+    Some(format!("{plugin}@{marketplace}"))
+}
+
 /// Plugin-provided skills under ~/.claude/plugins (marketplace clones).
-fn plugin_groups() -> Vec<SkillGroup> {
+fn plugin_groups(user_overrides: &HashMap<String, String>) -> Vec<SkillGroup> {
     let Ok(claude) = claude_dir() else { return Vec::new() };
     let plugins = claude.join("plugins");
     if !plugins.is_dir() {
         return Vec::new();
     }
+    let off_plugins = disabled_plugins();
     // plugin dir -> skills found; keyed by the directory that contains "skills/"
     let mut by_plugin: BTreeMap<PathBuf, Vec<Skill>> = BTreeMap::new();
     for entry in WalkDir::new(&plugins)
@@ -174,7 +247,15 @@ fn plugin_groups() -> Vec<SkillGroup> {
             if let (Some(skill_dir), Some(skills_parent)) = (skill_dir, skills_parent) {
                 if skills_parent.file_name().and_then(|n| n.to_str()) == Some("skills") {
                     if let Some(plugin_dir) = skills_parent.parent() {
-                        if let Some(skill) = load_skill(skill_dir, false) {
+                        let skill_dir_name = skill_dir
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        let disabled = plugin_key(plugin_dir)
+                            .map(|k| off_plugins.contains(&k))
+                            .unwrap_or(false)
+                            || is_off(user_overrides, &skill_dir_name);
+                        if let Some(skill) = load_skill(skill_dir, false, disabled) {
                             by_plugin
                                 .entry(plugin_dir.to_path_buf())
                                 .or_default()
@@ -209,23 +290,29 @@ pub fn discover(settings: &Settings) -> Result<Vec<SkillGroup>, String> {
     let mut groups: Vec<SkillGroup> = Vec::new();
 
     // User-level skills.
-    let user_root = claude_dir()?.join("skills");
+    let claude = claude_dir()?;
+    let user_overrides = skill_overrides(&claude);
+    let user_root = claude.join("skills");
     groups.push(SkillGroup {
         key: "user".into(),
         kind: "user".into(),
         label: "User skills".into(),
         detail: user_root.to_string_lossy().to_string(),
-        skills: scan_skills_root(&user_root, true),
+        skills: scan_skills_root(&user_root, true, &user_overrides),
     });
 
     // Project-level skills, from ~/.claude.json's real project paths.
     let mut project_groups: Vec<SkillGroup> = Vec::new();
     for project in claude_project_paths() {
-        let root = project.join(".claude").join("skills");
+        let project_claude = project.join(".claude");
+        let root = project_claude.join("skills");
         if !root.is_dir() {
             continue;
         }
-        let skills = scan_skills_root(&root, true);
+        // Project skills honor the project's overrides, falling back to user ones.
+        let mut overrides = user_overrides.clone();
+        overrides.extend(skill_overrides(&project_claude));
+        let skills = scan_skills_root(&root, true, &overrides);
         if skills.is_empty() {
             continue;
         }
@@ -247,7 +334,12 @@ pub fn discover(settings: &Settings) -> Result<Vec<SkillGroup>, String> {
     // Extra roots from settings — treated like additional skills roots.
     for root in &settings.extra_roots {
         let root_path = PathBuf::from(root);
-        let skills = scan_skills_root(&root_path, true);
+        // If the root sits inside a `.claude`-style dir, honor its overrides too.
+        let mut overrides = user_overrides.clone();
+        if let Some(parent) = root_path.parent() {
+            overrides.extend(skill_overrides(parent));
+        }
+        let skills = scan_skills_root(&root_path, true, &overrides);
         groups.push(SkillGroup {
             key: format!("extra:{root}"),
             kind: "extra".into(),
@@ -261,7 +353,7 @@ pub fn discover(settings: &Settings) -> Result<Vec<SkillGroup>, String> {
     }
 
     // Plugin cache skills (read-only).
-    groups.extend(plugin_groups());
+    groups.extend(plugin_groups(&user_overrides));
 
     Ok(groups)
 }

@@ -187,6 +187,13 @@ body,
 .badge.readonly { color: var(--warn); border-color: #5c5031; margin-left: 6px; }
 .badge.installed { color: var(--ok); border-color: #3a5240; margin-left: 6px; }
 .badge.warn { color: var(--warn); border-color: #5c5031; margin-left: 6px; }
+.badge.disabled { color: var(--danger); border-color: #6b3d36; margin-left: 6px; }
+
+.skill-name.disabled {
+  color: var(--text-dim);
+  text-decoration: line-through;
+  text-decoration-color: #6b3d36;
+}
 
 .skill-row {
   display: flex;

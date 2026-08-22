@@ -7,6 +7,7 @@ export interface Skill {
   files: string[];
   single_file: boolean;
   editable: boolean;
+  disabled: boolean;
 }
 
 export type GroupKind = "user" | "project" | "plugin" | "extra";

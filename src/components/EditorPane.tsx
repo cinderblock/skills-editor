@@ -234,6 +234,7 @@ const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
           <span className="editor-skill">{file.skill.name}</span>
           <span className="editor-file">{relPath}</span>
           {dirty && <span className="dot-dirty">●</span>}
+          {file.skill.disabled && <span className="badge disabled">disabled</span>}
           {readOnly && <span className="badge readonly">read-only</span>}
         </div>
         <div className="editor-actions">

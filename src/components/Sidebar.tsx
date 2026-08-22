@@ -157,8 +157,9 @@ function SkillNode({
           className="skill-main"
           onClick={() => onOpen({ path: skill.skill_md, skill, group })}
         >
-          <span className="skill-name">
+          <span className={`skill-name${skill.disabled ? " disabled" : ""}`}>
             {skill.name}
+            {skill.disabled && <span className="badge disabled">disabled</span>}
             {!skill.editable && <span className="badge readonly">read-only</span>}
           </span>
           {skill.description && (
