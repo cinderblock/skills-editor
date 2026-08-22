@@ -38,6 +38,9 @@ repo so they can be shared between hosts (per-host branches, cherry-pick friendl
   GitHub contents API (frontend fetch; GitHub sends CORS headers). Install = shallow
   `git clone` to temp + copy the skill subdir into `~/.claude/skills/<name>`.
 - Settings stored at Tauri app-config-dir/settings.json (extra roots, repo path, remote).
+- Dev ports are project-specific and fixed: 27391 (vite dev), 27392 (HMR) — set in
+  vite.config.ts and tauri.conf.json devUrl. Chosen to avoid the shared Tauri
+  default 1420. Don't move them back.
 
 ## Plan / steps
 

@@ -13,15 +13,18 @@ export default defineConfig(async () => ({
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
   // 2. tauri expects a fixed port, fail if that port is not available
+  // This project's dedicated ports: 27391 (dev server) / 27392 (HMR).
+  // Deliberately not the Tauri-default 1420, which every scaffolded
+  // Tauri project shares and collides on.
   server: {
-    port: 1420,
+    port: 27391,
     strictPort: true,
     host: host || false,
     hmr: host
       ? {
           protocol: "ws",
           host,
-          port: 1421,
+          port: 27392,
         }
       : undefined,
     watch: {

@@ -39,6 +39,9 @@ is supported first; the discovery layer is designed to grow to other agents.
 
 ## Development
 
+Dev ports are project-specific to avoid colliding with other Tauri projects
+(which all default to 1420): **27391** (vite dev server) and **27392** (HMR).
+
 ```sh
 bun install
 bun run tauri dev     # run the app
