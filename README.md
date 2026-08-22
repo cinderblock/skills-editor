@@ -21,7 +21,8 @@ is supported first; the discovery layer is designed to grow to other agents.
   are just a single `SKILL.md` show as one node; multi-file skills expand into
   a file tree.
 - **Installs popular skills** from a catalog (Anthropic's `anthropics/skills`,
-  `obra/superpowers`) — listings come live from the GitHub API, previews show
+  `mattpocock/skills`, `obra/superpowers`) — listings come live from the GitHub
+  API, previews show
   the real SKILL.md, and install is a shallow clone + copy into
   `~/.claude/skills`.
 - **AI edits via `claude -p`**: select text in a file and run a one-off

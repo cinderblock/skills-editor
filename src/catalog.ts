@@ -24,6 +24,13 @@ export const CATALOG_SOURCES: CatalogSource[] = [
     note: "Official Anthropic skills (documents, examples)",
   },
   {
+    label: "Matt Pocock's skills",
+    repo: "mattpocock/skills",
+    cloneUrl: "https://github.com/mattpocock/skills.git",
+    skillRoots: ["skills/engineering", "skills/productivity", "skills/misc"],
+    note: "Skills for Real Engineers (deprecated/in-progress omitted)",
+  },
+  {
     label: "Superpowers",
     repo: "obra/superpowers",
     cloneUrl: "https://github.com/obra/superpowers.git",
