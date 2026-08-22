@@ -49,9 +49,15 @@ repo so they can be shared between hosts (per-host branches, cherry-pick friendl
 4. [x] Frontend: sidebar tree (logical groups → skills → inner file tree only when
        multi-file), editor pane (frontmatter panel + CodeMirror), install dialog,
        sync panel, settings dialog.
-5. [x] Validate: `cargo check` + `bun run build` (tsc). Mind the compute-budget skill
+5. [x] AI jobs (user request mid-build): parallel background `claude -p` runs against
+       a selection, a skill, or a set of skills; files update in place; editor
+       auto-reloads or shows a conflict banner when dirty; failed jobs keep output.
+6. [x] Validate: `cargo check` + `bun run build` (tsc). Mind the compute-budget skill
        before heavy builds.
-6. [x] README, commit at logical steps.  ← all committed, see progress log
+7. [x] README, commit at logical steps.  ← all committed, see progress log
+8. [x] Smoke test: `bun run tauri dev` compiled (3m00s dev build), app process
+       launched and stayed alive, vite served 200. Killed after verification.
+       NOT yet exercised end-to-end by a human: install flow, sync flow, AI jobs.
 
 ## Findings / gotchas
 
@@ -91,8 +97,16 @@ repo so they can be shared between hosts (per-host branches, cherry-pick friendl
       (GitHub live listing + lazy SKILL.md preview), SyncPanel (init/snapshot/
       branches/push/pull), SettingsDialog (repo path, remote, extra roots),
       NewSkillDialog. `bun run build` (tsc + vite) clean.
+- [x] AI job runner: ai.rs (spawn `claude -p <prompt> --permission-mode acceptEdits`
+      in the skill dir, threads drain stdout/stderr, status map in tauri State),
+      AiTaskDialog (selection mode + multi-skill mode with templated prompts),
+      JobsPanel (poll every 2s, cancel, expand output), App bumps a reloadToken on
+      job completion so EditorPane re-checks disk freshness
 - [x] README rewritten for the actual app
 - [x] Commits: scaffold → backend → frontend → README (4 logical commits on master)
+- [x] Smoke test via `bun run tauri dev`: launch verified, then cleaned up
+      (process killed, port 1420 freed, CPU-broker slots released)
+- [x] WIP tracker entry added (P:\Projects\WIP\personal\skills-editor.md)
 
 ## Open questions for the user
 
