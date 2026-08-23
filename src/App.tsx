@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
-import { aiListJobs, deleteSkill, discoverSkills } from "./api";
+import { aiListJobs, deleteSkill, discoverSkills, setSkillEnabled } from "./api";
 import AiTaskDialog, { type AiTarget } from "./components/AiTaskDialog";
 import EditorPane, { type EditorPaneHandle } from "./components/EditorPane";
 import InstallDialog from "./components/InstallDialog";
@@ -145,6 +145,18 @@ export default function App() {
     [refresh, say],
   );
 
+  const toggleDisabled = useCallback(
+    (skill: Skill) => {
+      void setSkillEnabled(skill.dir, skill.disabled)
+        .then((msg) => {
+          say(msg);
+          return refresh();
+        })
+        .catch((e) => say(String(e)));
+    },
+    [refresh, say],
+  );
+
   const openCreated = useCallback(
     async (skillMdPath: string) => {
       await refresh();
@@ -205,6 +217,7 @@ export default function App() {
           onStatus={say}
           onDirtyChange={setDirty}
           onDeleteSkill={requestDelete}
+          onToggleDisabled={toggleDisabled}
           onAiSelection={(f, selection) =>
             setAiTarget({ mode: "selection", file: f, selection })
           }

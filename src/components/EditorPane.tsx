@@ -67,11 +67,12 @@ interface Props {
   onStatus: (msg: string) => void;
   onDirtyChange: (dirty: boolean) => void;
   onDeleteSkill: (skill: Skill) => void;
+  onToggleDisabled: (skill: Skill) => void;
   onAiSelection: (file: OpenFile, selection: string) => void;
 }
 
 const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
-  { file, reloadToken, onStatus, onDirtyChange, onDeleteSkill, onAiSelection },
+  { file, reloadToken, onStatus, onDirtyChange, onDeleteSkill, onToggleDisabled, onAiSelection },
   ref,
 ) {
   const [diskContent, setDiskContent] = useState<string | null>(null);
@@ -254,6 +255,11 @@ const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
           {!readOnly && (
             <button className="btn" disabled={!dirty} onClick={() => void save().catch(() => {})}>
               Save
+            </button>
+          )}
+          {!readOnly && (
+            <button className="btn" onClick={() => onToggleDisabled(file.skill)}>
+              {file.skill.disabled ? "Enable skill" : "Disable skill"}
             </button>
           )}
           {!readOnly && (

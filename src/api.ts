@@ -26,6 +26,9 @@ export const syncPush = () => invoke<string>("sync_push");
 export const syncFetch = () => invoke<string>("sync_fetch");
 export const syncPull = () => invoke<string>("sync_pull");
 
+export const setSkillEnabled = (skillDir: string, enabled: boolean) =>
+  invoke<string>("set_skill_enabled", { skillDir, enabled });
+
 export const aiStartJob = (label: string, cwd: string, prompt: string) =>
   invoke<number>("ai_start_job", { label, cwd, prompt });
 

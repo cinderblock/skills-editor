@@ -3,6 +3,7 @@ mod discovery;
 mod files;
 mod git;
 mod install;
+mod overrides;
 mod paths;
 mod settings;
 mod sync;
@@ -103,6 +104,11 @@ fn install_skill(
 }
 
 #[tauri::command]
+fn set_skill_enabled(skill_dir: String, enabled: bool) -> Result<String, String> {
+    overrides::set_skill_enabled(&skill_dir, enabled)
+}
+
+#[tauri::command]
 fn ai_start_job(
     state: tauri::State<ai::JobState>,
     label: String,
@@ -152,6 +158,7 @@ pub fn run() {
             sync_fetch,
             sync_pull,
             install_skill,
+            set_skill_enabled,
             ai_start_job,
             ai_list_jobs,
             ai_job_output,
