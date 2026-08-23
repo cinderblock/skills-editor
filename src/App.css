@@ -794,6 +794,23 @@ body,
   max-width: 40%;
 }
 
+.job-result {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 0 12px 6px;
+  font-size: 12px;
+}
+
+.job-applied {
+  color: var(--ok);
+}
+
+.job-notes {
+  color: var(--text-dim);
+}
+
 .job-detail {
   flex-basis: 100%;
   padding: 4px 12px 10px;

@@ -75,6 +75,16 @@ export default function JobsPanel({
                 Cancel
               </button>
             )}
+            {(job.notes || job.applied_files.length > 0) && (
+              <div className="job-result">
+                {job.applied_files.length > 0 && (
+                  <span className="job-applied">
+                    applied: {job.applied_files.join(", ")}
+                  </span>
+                )}
+                {job.notes && <span className="job-notes">{job.notes}</span>}
+              </div>
+            )}
             {expandedId === job.id && (
               <div className="job-detail">
                 <div className="job-prompt">

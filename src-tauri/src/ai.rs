@@ -1,6 +1,7 @@
 use std::collections::HashMap;
+use std::fs;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -33,6 +34,10 @@ pub struct JobInfo {
     pub prompt: String,
     /// Model passed to the CLI, or None for the user's default.
     pub model: Option<String>,
+    /// Files (relative to cwd) written after parsing the structured response.
+    pub applied_files: Vec<String>,
+    /// Summary the model returned alongside its changes.
+    pub notes: Option<String>,
     pub status: JobStatus,
     /// Last chunk of combined output, for list views.
     pub output_tail: String,
@@ -56,6 +61,69 @@ pub type JobState = Arc<JobManager>;
 
 pub fn new_state() -> JobState {
     Arc::new(JobManager::default())
+}
+
+/// Jobs run read-only and answer with this JSON shape; the app applies it.
+/// (`~/.claude` is a protected dir for the claude CLI, so letting the agent
+/// edit files directly fails — see AiTaskDialog prompt templates.)
+#[derive(serde::Deserialize)]
+struct StructuredResponse {
+    #[serde(default)]
+    files: Vec<FileChange>,
+    #[serde(default)]
+    notes: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct FileChange {
+    path: String,
+    content: String,
+}
+
+/// Lenient parse: raw JSON, a ```json fence, or the outermost {...} span.
+fn parse_response(output: &str) -> Result<StructuredResponse, String> {
+    let t = output.trim();
+    if let Ok(r) = serde_json::from_str::<StructuredResponse>(t) {
+        return Ok(r);
+    }
+    if let Some(start) = t.find("```") {
+        let after = &t[start..];
+        let body_start = after.find('\n').map(|i| start + i + 1);
+        let body_end = body_start.and_then(|b| t[b..].find("```").map(|i| b + i));
+        if let (Some(b), Some(e)) = (body_start, body_end) {
+            if let Ok(r) = serde_json::from_str::<StructuredResponse>(t[b..e].trim()) {
+                return Ok(r);
+            }
+        }
+    }
+    if let (Some(a), Some(b)) = (t.find('{'), t.rfind('}')) {
+        if a < b {
+            if let Ok(r) = serde_json::from_str::<StructuredResponse>(&t[a..=b]) {
+                return Ok(r);
+            }
+        }
+    }
+    Err("response did not contain the expected JSON ({\"files\": [...], \"notes\": ...})".into())
+}
+
+fn apply_changes(root: &Path, resp: &StructuredResponse) -> Result<Vec<String>, String> {
+    // Validate every path before writing anything.
+    for f in &resp.files {
+        let rel = Path::new(&f.path);
+        if rel.is_absolute() || f.path.split(['/', '\\']).any(|c| c == "..") {
+            return Err(format!("refusing suspicious path in response: {}", f.path));
+        }
+    }
+    let mut applied = Vec::new();
+    for f in &resp.files {
+        let dst = root.join(f.path.replace('/', std::path::MAIN_SEPARATOR_STR));
+        if let Some(parent) = dst.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+        }
+        fs::write(&dst, &f.content).map_err(|e| format!("cannot write {}: {e}", dst.display()))?;
+        applied.push(f.path.clone());
+    }
+    Ok(applied)
 }
 
 const TAIL_CHARS: usize = 400;
@@ -84,7 +152,9 @@ pub fn start_job(
     }
 
     let model = model.filter(|m| !m.trim().is_empty());
-    let mut args: Vec<&str> = vec!["-p", &prompt, "--permission-mode", "acceptEdits"];
+    // Read-only tools: edits come back as a structured response the app
+    // applies itself (the CLI can't write inside ~/.claude anyway).
+    let mut args: Vec<&str> = vec!["-p", &prompt, "--allowedTools", "Read,Glob,Grep"];
     if let Some(m) = model.as_deref() {
         args.push("--model");
         args.push(m);
@@ -104,12 +174,15 @@ pub fn start_job(
     let stderr = child.stderr.take();
     let child = Arc::new(Mutex::new(child));
 
+    let apply_root = cwd.clone();
     let info = JobInfo {
         id,
         label,
         cwd,
         prompt,
         model,
+        applied_files: Vec::new(),
+        notes: None,
         status: JobStatus::Running,
         output_tail: String::new(),
         started_at: now_secs(),
@@ -152,14 +225,37 @@ pub fn start_job(
         if !err_text.trim().is_empty() {
             output.lock().unwrap().push_str(&format!("\n[stderr]\n{err_text}"));
         }
+
+        // On success, parse the structured response and apply the file
+        // changes ourselves. Failures leave every file untouched (paths are
+        // validated before the first write) and keep the raw output.
+        let mut applied: Vec<String> = Vec::new();
+        let mut notes: Option<String> = None;
+        let mut apply_failed = false;
+        if matches!(&status, Ok(s) if s.success()) {
+            let text = output.lock().unwrap().clone();
+            match parse_response(&text).and_then(|resp| {
+                notes = resp.notes.clone();
+                apply_changes(Path::new(&apply_root), &resp)
+            }) {
+                Ok(files) => applied = files,
+                Err(e) => {
+                    apply_failed = true;
+                    output.lock().unwrap().push_str(&format!("\n[apply error] {e}"));
+                }
+            }
+        }
+
         let mut jobs = manager.jobs.lock().unwrap();
         if let Some(job) = jobs.get_mut(&id) {
             if job.info.status == JobStatus::Running {
                 job.info.status = match status {
-                    Ok(s) if s.success() => JobStatus::Done,
+                    Ok(s) if s.success() && !apply_failed => JobStatus::Done,
                     _ => JobStatus::Failed,
                 };
             }
+            job.info.applied_files = applied;
+            job.info.notes = notes;
             job.info.finished_at = Some(now_secs());
             job.child = None;
         }

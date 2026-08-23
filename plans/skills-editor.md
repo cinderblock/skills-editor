@@ -64,6 +64,18 @@ repo so they can be shared between hosts (per-host branches, cherry-pick friendl
 
 ## Findings / gotchas
 
+- `~/.claude` is a PROTECTED directory for the claude CLI — spawned `claude -p`
+  jobs cannot edit files there even with `--permission-mode acceptEdits`. AI jobs
+  therefore run read-only (`--allowedTools Read,Glob,Grep`) and answer with
+  structured JSON `{"files":[{path,content}],"notes"}` that ai.rs parses
+  (leniently: raw / ```json fence / outermost braces) and applies itself via
+  the app's own guarded writes. Contract smoke-tested against real
+  `claude -p --model haiku` 2026-08-23: returns fenced JSON, parses clean.
+- `~/.claude.json` may register the home dir itself as a project → its
+  .claude/skills == user skills root. Discovery dedupes canonicalized roots.
+- Frontmatter split/join MUST be byte-exact inverses or the editor oscillates
+  (add/remove newline at top per keystroke). Also preserve CRLF vs LF.
+
 - `bun create tauri-app . …` refuses non-empty dirs (the `.git` dir counts) — scaffold
   to a temp dir and move files in.
 - Scaffold bakes the directory name into package.json, Cargo.toml ([package] name,
