@@ -288,11 +288,18 @@ fn plugin_groups(user_overrides: &HashMap<String, String>) -> Vec<SkillGroup> {
 
 pub fn discover(settings: &Settings) -> Result<Vec<SkillGroup>, String> {
     let mut groups: Vec<SkillGroup> = Vec::new();
+    // The same directory can be reachable as more than one group (e.g. the
+    // home dir registered as a Claude project makes its .claude/skills the
+    // user root). Scan each root once or skills show up — and get AI jobs
+    // dispatched — twice.
+    let mut seen_roots: HashSet<PathBuf> = HashSet::new();
+    let canon = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
 
     // User-level skills.
     let claude = claude_dir()?;
     let user_overrides = skill_overrides(&claude);
     let user_root = claude.join("skills");
+    seen_roots.insert(canon(&user_root));
     groups.push(SkillGroup {
         key: "user".into(),
         kind: "user".into(),
@@ -306,7 +313,7 @@ pub fn discover(settings: &Settings) -> Result<Vec<SkillGroup>, String> {
     for project in claude_project_paths() {
         let project_claude = project.join(".claude");
         let root = project_claude.join("skills");
-        if !root.is_dir() {
+        if !root.is_dir() || !seen_roots.insert(canon(&root)) {
             continue;
         }
         // Project skills honor the project's overrides, falling back to user ones.
@@ -334,6 +341,9 @@ pub fn discover(settings: &Settings) -> Result<Vec<SkillGroup>, String> {
     // Extra roots from settings — treated like additional skills roots.
     for root in &settings.extra_roots {
         let root_path = PathBuf::from(root);
+        if !seen_roots.insert(canon(&root_path)) {
+            continue;
+        }
         // If the root sits inside a `.claude`-style dir, honor its overrides too.
         let mut overrides = user_overrides.clone();
         if let Some(parent) = root_path.parent() {

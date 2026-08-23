@@ -50,6 +50,7 @@ export default function AiTaskDialog({
   onStarted: (count: number) => void;
 }) {
   const [request, setRequest] = useState("");
+  const [model, setModel] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const editableSkills = useMemo(
@@ -74,22 +75,27 @@ export default function AiTaskDialog({
     setError(null);
     try {
       let count = 0;
+      const chosenModel = model || null;
       if (target.mode === "selection" && target.file && target.selection) {
         await aiStartJob(
           `Selection in ${target.file.skill.name}`,
           target.file.skill.dir,
           selectionPrompt(target.file, target.selection, request.trim()),
+          chosenModel,
         );
         count = 1;
       } else {
-        const chosen = editableSkills.filter(({ s }) => checked[s.id]);
+        const seen = new Set<string>();
+        const chosen = editableSkills.filter(
+          ({ s }) => checked[s.id] && !seen.has(s.id) && (seen.add(s.id), true),
+        );
         if (chosen.length === 0) {
           setError("Pick at least one skill.");
           setBusy(false);
           return;
         }
         for (const { s } of chosen) {
-          await aiStartJob(s.name, s.dir, skillPrompt(s, request.trim()));
+          await aiStartJob(s.name, s.dir, skillPrompt(s, request.trim()), chosenModel);
           count++;
         }
       }
@@ -150,13 +156,24 @@ export default function AiTaskDialog({
           autoFocus
         />
         {error && <div className="modal-error">{error}</div>}
-        <div className="modal-actions">
-          <button className="btn" onClick={onClose} disabled={busy}>
-            Cancel
-          </button>
-          <button className="btn accent" onClick={() => void run()} disabled={busy}>
-            {busy ? "Starting…" : "Run"}
-          </button>
+        <div className="modal-actions space-between">
+          <label className="model-pick">
+            <span>model</span>
+            <select value={model} onChange={(e) => setModel(e.target.value)}>
+              <option value="">default (your claude config)</option>
+              <option value="haiku">haiku — fastest</option>
+              <option value="sonnet">sonnet</option>
+              <option value="opus">opus</option>
+            </select>
+          </label>
+          <div className="modal-actions">
+            <button className="btn" onClick={onClose} disabled={busy}>
+              Cancel
+            </button>
+            <button className="btn accent" onClick={() => void run()} disabled={busy}>
+              {busy ? "Starting…" : "Run"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
