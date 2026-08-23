@@ -6,18 +6,27 @@ export interface ParsedSkillFile {
   body: string;
 }
 
-/** Split a SKILL.md into frontmatter YAML and markdown body. */
+/**
+ * Split a SKILL.md into frontmatter YAML and markdown body.
+ *
+ * Must be a byte-exact inverse of joinFrontmatter — any lossiness here makes
+ * the editor mutate untouched parts of the file on every keystroke.
+ */
 export function splitFrontmatter(text: string): ParsedSkillFile {
-  const m = text.match(/^﻿?---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  const m = text.match(/^﻿?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
   if (!m) return { frontmatter: null, body: text };
   return { frontmatter: m[1], body: text.slice(m[0].length) };
 }
 
-/** Reassemble a SKILL.md from frontmatter YAML and body. */
+/** Reassemble a SKILL.md, preserving the file's newline style verbatim. */
 export function joinFrontmatter(frontmatter: string | null, body: string): string {
   if (frontmatter === null) return body;
-  const fm = frontmatter.replace(/\r?\n$/, "");
-  return `---\n${fm}\n---\n${body.startsWith("\n") ? "" : "\n"}${body.replace(/^\n/, "")}`;
+  const eol = frontmatter.includes("\r\n") || body.includes("\r\n") ? "\r\n" : "\n";
+  const fm = frontmatter
+    .replace(/\r?\n$/, "")
+    .split(/\r\n|\n/)
+    .join(eol);
+  return `---${eol}${fm}${eol}---${eol}${body}`;
 }
 
 export interface FrontmatterFields {
