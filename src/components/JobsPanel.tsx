@@ -64,6 +64,7 @@ export default function JobsPanel({
                 )}
               </span>
               <span className="job-label">{job.label}</span>
+              {job.model && <span className="badge">{job.model}</span>}
               <span className="job-cwd">{job.cwd}</span>
             </button>
             {job.status === "running" && (

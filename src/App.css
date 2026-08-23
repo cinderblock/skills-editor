@@ -518,6 +518,23 @@ body,
   align-items: center;
 }
 
+.model-pick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.model-pick select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
 .check-label {
   display: flex;
   align-items: center;

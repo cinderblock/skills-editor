@@ -31,6 +31,8 @@ pub struct JobInfo {
     /// Directory the job runs in (and may edit files under).
     pub cwd: String,
     pub prompt: String,
+    /// Model passed to the CLI, or None for the user's default.
+    pub model: Option<String>,
     pub status: JobStatus,
     /// Last chunk of combined output, for list views.
     pub output_tail: String,
@@ -69,15 +71,27 @@ fn tail(s: &str) -> String {
 }
 
 /// Spawn `claude -p <prompt>` in `cwd` as a tracked background job.
-pub fn start_job(state: &JobState, label: String, cwd: String, prompt: String) -> Result<u64, String> {
+pub fn start_job(
+    state: &JobState,
+    label: String,
+    cwd: String,
+    prompt: String,
+    model: Option<String>,
+) -> Result<u64, String> {
     let dir = PathBuf::from(&cwd);
     if !dir.is_dir() {
         return Err(format!("{cwd} is not a directory"));
     }
 
+    let model = model.filter(|m| !m.trim().is_empty());
+    let mut args: Vec<&str> = vec!["-p", &prompt, "--permission-mode", "acceptEdits"];
+    if let Some(m) = model.as_deref() {
+        args.push("--model");
+        args.push(m);
+    }
     let mut child = Command::new("claude")
         .current_dir(&dir)
-        .args(["-p", &prompt, "--permission-mode", "acceptEdits"])
+        .args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -95,6 +109,7 @@ pub fn start_job(state: &JobState, label: String, cwd: String, prompt: String) -
         label,
         cwd,
         prompt,
+        model,
         status: JobStatus::Running,
         output_tail: String::new(),
         started_at: now_secs(),

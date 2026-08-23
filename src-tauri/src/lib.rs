@@ -114,8 +114,9 @@ fn ai_start_job(
     label: String,
     cwd: String,
     prompt: String,
+    model: Option<String>,
 ) -> Result<u64, String> {
-    ai::start_job(&state, label, cwd, prompt)
+    ai::start_job(&state, label, cwd, prompt, model)
 }
 
 #[tauri::command]

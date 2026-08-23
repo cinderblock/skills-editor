@@ -29,8 +29,12 @@ export const syncPull = () => invoke<string>("sync_pull");
 export const setSkillEnabled = (skillDir: string, enabled: boolean) =>
   invoke<string>("set_skill_enabled", { skillDir, enabled });
 
-export const aiStartJob = (label: string, cwd: string, prompt: string) =>
-  invoke<number>("ai_start_job", { label, cwd, prompt });
+export const aiStartJob = (
+  label: string,
+  cwd: string,
+  prompt: string,
+  model: string | null,
+) => invoke<number>("ai_start_job", { label, cwd, prompt, model });
 
 export const aiListJobs = () => invoke<JobInfo[]>("ai_list_jobs");
 

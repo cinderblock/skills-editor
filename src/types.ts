@@ -45,6 +45,7 @@ export interface JobInfo {
   label: string;
   cwd: string;
   prompt: string;
+  model: string | null;
   status: JobStatus;
   output_tail: string;
   started_at: number;
