@@ -160,7 +160,11 @@ agents' hook formats.
 - [x] Commit `672b066` — fixes found along the way (key reordering, console
   windows, git prompt hangs, mixed path separators).
 - [x] Commit `4096cf2` — hooks backend.
-- [ ] Hooks UI + tests + docs commit, push, CI green.
+- [x] Commit `5b7b3e7` — end-to-end hooks + sync snapshot tests.
+- [x] Commit `00c7385` — Hooks tab UI, bun tests, CI, docs. Pushed; CI run
+  35146682025 green (frontend + rust).
+- [ ] Not yet exercised by the user in the real app (edit/disable flows were
+  verified by tests against a scratch home, not on live settings files).
 
 ## Open questions for the user
 
