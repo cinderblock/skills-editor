@@ -67,17 +67,16 @@ pub fn extract_frontmatter(text: &str) -> Option<String> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let rest = text.strip_prefix("---")?;
     let rest = rest.strip_prefix("\r\n").or_else(|| rest.strip_prefix('\n'))?;
-    for fence in ["\n---\r\n", "\n---\n", "\r\n---\r\n", "\r\n---\n"] {
+    // Match on the bare "\n" and drop a preceding "\r", so CRLF files don't
+    // leave a stray carriage return on the last YAML line.
+    let yaml = |s: &str| s.trim_end_matches('\r').to_string();
+    for fence in ["\n---\r\n", "\n---\n"] {
         if let Some(end) = rest.find(fence) {
-            return Some(rest[..end].to_string());
+            return Some(yaml(&rest[..end]));
         }
     }
     // Frontmatter that ends the file.
-    let trimmed = rest.trim_end();
-    trimmed
-        .strip_suffix("\n---")
-        .or_else(|| trimmed.strip_suffix("\r\n---"))
-        .map(|s| s.to_string())
+    rest.trim_end().strip_suffix("\n---").map(yaml)
 }
 
 /// skillOverrides from one settings file: skill name -> "off"/"on".
@@ -382,4 +381,37 @@ pub fn allowed_roots(settings: &Settings) -> Vec<PathBuf> {
         roots.push(PathBuf::from(root));
     }
     roots
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_frontmatter;
+
+    #[test]
+    fn extracts_lf_frontmatter() {
+        let fm = extract_frontmatter("---\nname: a\ndescription: b\n---\n\n# Body\n");
+        assert_eq!(fm.as_deref(), Some("name: a\ndescription: b"));
+    }
+
+    #[test]
+    fn extracts_crlf_frontmatter() {
+        let fm = extract_frontmatter("---\r\nname: a\r\n---\r\nbody");
+        assert_eq!(fm.as_deref(), Some("name: a"));
+    }
+
+    #[test]
+    fn extracts_frontmatter_ending_the_file() {
+        assert_eq!(extract_frontmatter("---\nname: a\n---").as_deref(), Some("name: a"));
+    }
+
+    #[test]
+    fn ignores_bom() {
+        assert_eq!(extract_frontmatter("\u{feff}---\nname: a\n---\n").as_deref(), Some("name: a"));
+    }
+
+    #[test]
+    fn none_without_frontmatter() {
+        assert_eq!(extract_frontmatter("# Just markdown\n"), None);
+        assert_eq!(extract_frontmatter("---\nunterminated"), None);
+    }
 }

@@ -221,6 +221,8 @@ pub fn start_job(
             }
         }
         let status = child.lock().unwrap().wait();
+        // Parse stdout alone — stderr warnings must not corrupt the JSON.
+        let stdout_text = output.lock().unwrap().clone();
         let err_text = err_buf.lock().unwrap().clone();
         if !err_text.trim().is_empty() {
             output.lock().unwrap().push_str(&format!("\n[stderr]\n{err_text}"));
@@ -233,8 +235,7 @@ pub fn start_job(
         let mut notes: Option<String> = None;
         let mut apply_failed = false;
         if matches!(&status, Ok(s) if s.success()) {
-            let text = output.lock().unwrap().clone();
-            match parse_response(&text).and_then(|resp| {
+            match parse_response(&stdout_text).and_then(|resp| {
                 notes = resp.notes.clone();
                 apply_changes(Path::new(&apply_root), &resp)
             }) {
@@ -299,4 +300,66 @@ pub fn cancel_job(state: &JobState, id: u64) -> Result<(), String> {
 pub fn clear_finished(state: &JobState) {
     let mut jobs = state.jobs.lock().unwrap();
     jobs.retain(|_, j| j.info.status == JobStatus::Running);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BODY: &str = r#"{"files":[{"path":"SKILL.md","content":"---\nname: x\n---\n"}],"notes":"n"}"#;
+
+    #[test]
+    fn parses_raw_json() {
+        let r = parse_response(BODY).unwrap();
+        assert_eq!(r.files.len(), 1);
+        assert_eq!(r.files[0].path, "SKILL.md");
+        assert_eq!(r.notes.as_deref(), Some("n"));
+    }
+
+    #[test]
+    fn parses_fenced_json() {
+        let r = parse_response(&format!("```json\n{BODY}\n```\n")).unwrap();
+        assert_eq!(r.files[0].content, "---\nname: x\n---\n");
+    }
+
+    #[test]
+    fn parses_json_wrapped_in_prose() {
+        let r = parse_response(&format!("Here you go:\n{BODY}\nDone.")).unwrap();
+        assert_eq!(r.files.len(), 1);
+    }
+
+    #[test]
+    fn accepts_empty_change_set() {
+        let r = parse_response(r#"{"files": [], "notes": "nothing to do"}"#).unwrap();
+        assert!(r.files.is_empty());
+    }
+
+    #[test]
+    fn rejects_non_json() {
+        assert!(parse_response("I edited the file for you.").is_err());
+    }
+
+    fn change(path: &str) -> StructuredResponse {
+        StructuredResponse {
+            files: vec![FileChange { path: path.into(), content: "x".into() }],
+            notes: None,
+        }
+    }
+
+    #[test]
+    fn refuses_escaping_paths_without_writing() {
+        let root = std::env::temp_dir().join(format!("skills-editor-test-{}", now_secs()));
+        fs::create_dir_all(&root).unwrap();
+        for bad in ["../evil.md", "sub/../../evil.md", "..\\evil.md"] {
+            assert!(apply_changes(&root, &change(bad)).is_err(), "{bad} should be refused");
+        }
+        let abs = if cfg!(windows) { "C:\\evil.md" } else { "/evil.md" };
+        assert!(apply_changes(&root, &change(abs)).is_err());
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 0, "nothing may be written");
+
+        let ok = apply_changes(&root, &change("refs/notes.md")).unwrap();
+        assert_eq!(ok, vec!["refs/notes.md".to_string()]);
+        assert_eq!(fs::read_to_string(root.join("refs").join("notes.md")).unwrap(), "x");
+        let _ = fs::remove_dir_all(&root);
+    }
 }
