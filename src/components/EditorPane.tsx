@@ -15,6 +15,12 @@ import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { html } from "@codemirror/lang-html";
 import { css } from "@codemirror/lang-css";
+import { StreamLanguage } from "@codemirror/language";
+import { shell } from "@codemirror/legacy-modes/mode/shell";
+import { powerShell } from "@codemirror/legacy-modes/mode/powershell";
+import { ruby } from "@codemirror/legacy-modes/mode/ruby";
+import { perl } from "@codemirror/legacy-modes/mode/perl";
+import { lua } from "@codemirror/legacy-modes/mode/lua";
 import { readSkillFile, writeSkillFile } from "../api";
 import {
   joinFrontmatter,
@@ -50,6 +56,19 @@ function languageFor(path: string): Extension[] {
       return [html()];
     case "css":
       return [css()];
+    case "sh":
+    case "bash":
+    case "zsh":
+      return [StreamLanguage.define(shell)];
+    case "ps1":
+    case "psm1":
+      return [StreamLanguage.define(powerShell)];
+    case "rb":
+      return [StreamLanguage.define(ruby)];
+    case "pl":
+      return [StreamLanguage.define(perl)];
+    case "lua":
+      return [StreamLanguage.define(lua)];
     default:
       return [];
   }
@@ -150,7 +169,7 @@ const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
     const f = fileRef.current;
     if (!f) return;
     if (!f.skill.editable) {
-      onStatus("This skill is read-only (plugin cache)");
+      onStatus(f.kind === "script" ? "This script is read-only" : "This skill is read-only (plugin cache)");
       return;
     }
     try {
@@ -202,7 +221,7 @@ const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
       <div className="editor-pane empty">
         <div className="empty-hint">
           <h2>Skills Editor</h2>
-          <p>Pick a skill on the left, or install new ones from the catalog.</p>
+          <p>Pick a skill or hook on the left, or install new skills from the catalog.</p>
         </div>
       </div>
     );
@@ -224,6 +243,8 @@ const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
   const fields = readFields(frontmatter);
   const structured = isSkillMd && !rawMode && frontmatter !== null;
   const readOnly = !file.skill.editable;
+  const isScript = file.kind === "script";
+  const skillActions = !readOnly && !isScript;
   const relPath = file.path.startsWith(file.skill.dir)
     ? file.path.slice(file.skill.dir.length + 1)
     : file.path;
@@ -232,8 +253,9 @@ const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
     <div className="editor-pane">
       <div className="editor-header">
         <div className="editor-title">
-          <span className="editor-skill">{file.skill.name}</span>
+          <span className="editor-skill">{isScript ? "Hook script" : file.skill.name}</span>
           <span className="editor-file">{relPath}</span>
+          {isScript && <span className="badge">{file.group.label}</span>}
           {dirty && <span className="dot-dirty">●</span>}
           {file.skill.disabled && <span className="badge disabled">disabled</span>}
           {readOnly && <span className="badge readonly">read-only</span>}
@@ -257,12 +279,12 @@ const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
               Save
             </button>
           )}
-          {!readOnly && (
+          {skillActions && (
             <button className="btn" onClick={() => onToggleDisabled(file.skill)}>
               {file.skill.disabled ? "Enable skill" : "Disable skill"}
             </button>
           )}
-          {!readOnly && (
+          {skillActions && (
             <button className="btn danger" onClick={() => onDeleteSkill(file.skill)}>
               Delete skill
             </button>

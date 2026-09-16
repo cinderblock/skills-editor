@@ -57,7 +57,112 @@ export interface JobInfo {
 export interface OpenFile {
   /** Absolute path of the file being edited. */
   path: string;
-  /** The skill this file belongs to. */
+  /**
+   * The skill this file belongs to. Hook scripts get a stand-in whose `dir`
+   * is the script's folder (AI edits run there).
+   */
   skill: Skill;
   group: SkillGroup;
+  /** Defaults to "skill". Scripts hide skill-only actions. */
+  kind?: "skill" | "script";
+}
+
+// ---- hooks ----
+
+export interface ScriptRef {
+  event: string;
+  group: number;
+  handler: number;
+  path: string;
+  exists: boolean;
+}
+
+export interface ParkedHook {
+  id: string;
+  file: string;
+  event: string;
+  matcher: string | null;
+  group_extra: Record<string, unknown>;
+  handler: Record<string, unknown>;
+  disabled_at: number;
+}
+
+export type HookSourceKind =
+  | "user"
+  | "project"
+  | "local"
+  | "managed"
+  | "plugin"
+  | "skill"
+  | "agent"
+  | "orphaned";
+
+export interface HookSource {
+  file: string;
+  file_label: string;
+  kind: HookSourceKind;
+  editable: boolean;
+  exists: boolean;
+  hash: string;
+  hooks: Record<string, unknown>;
+  disable_all_hooks: boolean;
+  inactive_reason: string | null;
+  project_dir: string | null;
+  plugin_root: string | null;
+  scripts: ScriptRef[];
+  parked: ParkedHook[];
+  parse_error: string | null;
+}
+
+export interface ScriptFile {
+  path: string;
+  name: string;
+  referenced: boolean;
+  editable: boolean;
+}
+
+export interface HookGroup {
+  key: string;
+  kind: "user" | "project" | "managed" | "plugin" | "frontmatter" | "orphaned";
+  label: string;
+  detail: string;
+  sources: HookSource[];
+  scripts: ScriptFile[];
+}
+
+export interface HookTarget {
+  file: string;
+  label: string;
+  project_dir: string | null;
+}
+
+export interface HooksOverview {
+  groups: HookGroup[];
+  targets: HookTarget[];
+  events: string[];
+}
+
+/** What the hook editor is showing. */
+export type HookSelection =
+  | { kind: "handler"; file: string; event: string; group: number; handler: number }
+  | { kind: "parked"; id: string }
+  | { kind: "new"; file: string | null };
+
+export interface HookTestRequest {
+  command: string;
+  args: string[] | null;
+  shell: string | null;
+  timeout_secs: number | null;
+  project_dir: string | null;
+  plugin_root: string | null;
+  stdin: string;
+}
+
+export interface HookTestResult {
+  exit_code: number | null;
+  stdout: string;
+  stderr: string;
+  timed_out: boolean;
+  duration_ms: number;
+  runner: string;
 }

@@ -65,7 +65,9 @@ repo so they can be shared between hosts (per-host branches, cherry-pick friendl
        27391/27392, disabled-state display + editor-header toggle (NOT in the
        sidebar rows — user wants the list compact), newline-flicker fix,
        discovery dedupe, model selector, structured AI responses.
-10. [ ] Publish + self-update — tracked in `plans/release-pipeline.md`.
+10. [x] Publish + self-update — tracked in `plans/release-pipeline.md`
+       (v0.1.0 tag still to be pushed by the user).
+11. [x] Hooks support (Hooks tab) — tracked in `plans/hooks.md`.
 
 ## Findings / gotchas
 

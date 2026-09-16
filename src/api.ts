@@ -1,5 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { JobInfo, Settings, SkillGroup, SyncStatus } from "./types";
+import type {
+  HookTestRequest,
+  HookTestResult,
+  HooksOverview,
+  JobInfo,
+  Settings,
+  SkillGroup,
+  SyncStatus,
+} from "./types";
 
 export const discoverSkills = () => invoke<SkillGroup[]>("discover_skills");
 
@@ -28,6 +36,35 @@ export const syncPull = () => invoke<string>("sync_pull");
 
 export const setSkillEnabled = (skillDir: string, enabled: boolean) =>
   invoke<string>("set_skill_enabled", { skillDir, enabled });
+
+// ---- hooks ----
+
+export const hooksOverview = () => invoke<HooksOverview>("hooks_overview");
+
+/** Replace a settings file's `hooks` block. Returns the file's new hash. */
+export const hooksSet = (file: string, expectedHash: string, hooks: unknown) =>
+  invoke<string>("hooks_set", { file, expectedHash, hooks });
+
+export const hooksSetDisableAll = (file: string, expectedHash: string, disabled: boolean) =>
+  invoke<string>("hooks_set_disable_all", { file, expectedHash, disabled });
+
+export const hooksDisable = (
+  file: string,
+  expectedHash: string,
+  event: string,
+  group: number,
+  handler: number,
+) => invoke<void>("hooks_disable", { file, expectedHash, event, group, handler });
+
+export const hooksEnable = (id: string) => invoke<void>("hooks_enable", { id });
+
+export const hooksDeleteParked = (id: string) => invoke<void>("hooks_delete_parked", { id });
+
+export const hooksTest = (request: HookTestRequest) =>
+  invoke<HookTestResult>("hooks_test", { request });
+
+/** Backend errors for stale writes start with this marker. */
+export const isConflict = (e: unknown) => String(e).includes("CONFLICT:");
 
 export const aiStartJob = (
   label: string,

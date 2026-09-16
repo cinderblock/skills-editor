@@ -1,10 +1,10 @@
 # Skills Editor
 
-A small desktop IDE for managing AI agent skills — discovering, editing,
-installing, enabling/disabling, AI-assisted rewriting, and sharing them between
-machines. Built with Tauri v2, React, TypeScript, and Bun. Claude Code's skill
-format is supported first; the discovery layer is designed to grow to other
-agents.
+A small desktop IDE for managing AI agent skills and hooks — discovering,
+editing, installing, enabling/disabling, testing, AI-assisted rewriting, and
+sharing them between machines. Built with Tauri v2, React, TypeScript, and Bun.
+Claude Code's formats are supported first; the discovery layer is designed to
+grow to other agents.
 
 ## Install
 
@@ -59,11 +59,43 @@ Requires `git` on `PATH` (sync and catalog installs) and the
   can't be parsed or names an unsafe path changes nothing and fails the job
   with its full output kept. The editor reloads changed files automatically,
   or shows a conflict banner if you have unsaved edits.
-- **Tracks skill evolution in a git repo** (default `~/.claude-skills-repo`):
-  one branch per host, snapshot commits of all user/project/extra skills plus
-  a `manifest.json` mapping repo paths back to their sources. Push/pull against
-  a shared remote to move skills between machines and cherry-pick between host
-  branches. Only fast-forward pulls and plain pushes — never force.
+- **Manages Claude Code hooks** (the **Hooks** tab):
+  - Finds hooks in user and project settings (`settings.json` and
+    `settings.local.json`), file-based managed policy, installed plugins, and
+    skill/subagent frontmatter. Each is grouped like skills, with its file
+    shown and a note when it won't run (disabled plugin, `disableAllHooks`).
+    Managed, plugin, and frontmatter hooks are read-only.
+  - A structured editor covers every event and handler type (`command`,
+    `http`, `mcp_tool`, `prompt`, `agent`). It explains what the matcher
+    matches, validates before saving, and has a raw-JSON view of a file's
+    whole `hooks` block.
+  - Saving rewrites only the `hooks` key. The rest of the file stays
+    byte-for-byte the same, including key order. If Claude Code changed the
+    file since you opened it, the save is refused rather than silently
+    overwriting it.
+  - **Disable/Enable** per hook. Claude Code has no such switch, so a
+    disabled hook is moved out of the settings file into the app's own
+    storage, and put back into its matcher group when re-enabled. There's
+    also the native per-file `disableAllHooks` toggle.
+  - **Scripts** that hooks run are detected from the command (`~`, `$HOME`,
+    `$CLAUDE_PROJECT_DIR`, `$(git rev-parse --show-toplevel)`,
+    `${CLAUDE_PLUGIN_ROOT}`, exec-form args). They open in the editor with
+    shell/PowerShell highlighting. Unreferenced files in `.claude/hooks` are
+    listed too.
+  - **Test run** executes a command hook with editable, event-shaped sample
+    input, using Git Bash or PowerShell like Claude Code does. It shows the
+    exit code, stdout/stderr, and how Claude Code would read the result
+    (allow, block, JSON decision, non-blocking error, timeout).
+- **Tracks skill and hook evolution in a git repo** (default
+  `~/.claude-skills-repo`):
+  - One branch per host, with snapshot commits of all user/project/extra
+    skills.
+  - Each settings file's hook config and the scripts it runs go under
+    `hooks/`, and hooks disabled from the app are included too.
+  - A `manifest.json` maps repo paths back to their sources.
+  - Push/pull against a shared remote to move skills between machines, and
+    cherry-pick between host branches. Pulls are fast-forward only and
+    pushes are plain — never forced.
 
 ## Development
 
@@ -73,6 +105,7 @@ Dev ports are project-specific to avoid colliding with other Tauri projects
 ```sh
 bun install
 bun run tauri dev     # run the app with hot reload
+bun run test          # frontend unit tests (bun test)
 bun run build         # typecheck + bundle frontend
 cargo test --manifest-path src-tauri/Cargo.toml   # backend tests (needs dist/ from the build)
 ```
@@ -83,7 +116,7 @@ manual check in Settings still works.
 ## CI and releases
 
 - **CI** (`.github/workflows/ci.yml`) runs on every push to `master` and on
-  PRs: frontend typecheck + build on Linux, Rust tests on Windows.
+  PRs: frontend tests, typecheck, and build on Linux; Rust tests on Windows.
 - **Releases** (`.github/workflows/release.yml`) are built only by CI, from a
   version tag. To cut one:
   1. Bump the version in `package.json`, `src-tauri/Cargo.toml`, and
@@ -102,14 +135,25 @@ manual check in Settings still works.
 
 ## Layout
 
-- `src/` — React frontend (components, `api.ts` IPC wrappers, `catalog.ts`
-  install sources, `frontmatter.ts` YAML round-tripping, `updates.ts`
-  self-update)
-- `src-tauri/src/` — Rust backend: `discovery.rs` (skill scanning and enabled
-  state), `overrides.rs` (enable/disable), `files.rs` (guarded
-  read/write/create/delete), `sync.rs` (tracking repo), `install.rs` (catalog
-  installs), `ai.rs` (parallel `claude -p` jobs and response application),
-  `git.rs` (safe git shell-out), `settings.rs`
+- `src/` — React frontend:
+  - `components/`, including `HooksSidebar` and `HookEditor`
+  - `api.ts` — IPC wrappers
+  - `catalog.ts` — install sources
+  - `frontmatter.ts` — YAML round-tripping
+  - `hooksModel.ts` — hook event metadata, edit/move logic, test-result
+    interpretation; unit-tested in `hooksModel.test.ts`
+  - `updates.ts` — self-update
+- `src-tauri/src/` — Rust backend:
+  - `discovery.rs` — skill scanning and enabled state
+  - `overrides.rs` — enable/disable
+  - `hooks.rs` — hook discovery, script resolution, conflict-checked edits,
+    disabled-hook store, test runner
+  - `files.rs` — guarded read/write/create/delete
+  - `sync.rs` — tracking repo
+  - `install.rs` — catalog installs
+  - `ai.rs` — parallel `claude -p` jobs and response application
+  - `git.rs` — safe git shell-out
+  - `settings.rs`
 - `plans/` — living plan documents
 
 ## License

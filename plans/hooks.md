@@ -112,23 +112,55 @@ agents' hook formats.
 
 ## Plan / steps
 
-1. [x] Research schema/locations; survey this machine. ← done
-2. [ ] Backend `hooks.rs`: discovery (all sources above), script-path
+1. [x] Research schema/locations; survey this machine.
+2. [x] Backend `hooks.rs`: discovery (all sources above), script-path
    resolution, orphan scripts, read with content hash.
-3. [ ] Backend writes: `set_hooks` (hash-checked, surgical), `disableAllHooks`
+3. [x] Backend writes: `set_hooks` (hash-checked, surgical), `disableAllHooks`
    toggle, sidecar disable/enable.
-4. [ ] Backend test runner.
-5. [ ] File guard + sync snapshot extended for hooks/scripts.
-6. [ ] Unit tests: script-path extraction, matcher classification, surgical
-   write + conflict detection, sidecar round trip, test-run exit semantics.
-7. [ ] Frontend: types/api, Skills/Hooks switch, hooks sidebar, HookEditor
-   (structured + raw), script editing, test-run panel, disable toggles.
-8. [ ] Checks (`bun run build`, `cargo test`), README, commit, push (CI).
+4. [x] Backend test runner (Git Bash / PowerShell / exec form, timeout,
+   process-tree kill, bounded wait for grandchildren holding pipes).
+5. [x] File guard + sync snapshot extended for hooks/scripts.
+6. [x] Tests: Rust 23 (incl. end-to-end create→disable→enable→clear against
+   a thread-local fake home, byte-identical round trip, sync export);
+   frontend `bun test` 14 (`hooksModel.ts` edit/move/validate/interpret).
+7. [x] Frontend: Skills/Hooks tabs, `HooksSidebar`, `HookEditor` (structured
+   + raw JSON, conflict banner, disable/enable/delete, scripts, test run),
+   scripts in `EditorPane` with shell/PowerShell highlighting.
+8. [x] Verified in the running dev app against this machine's real hooks
+   (UI Automation + PrintWindow screenshots; the force-push guard test-ran
+   to "Exit 0 — success"). Deliberately did NOT save/disable through the UI
+   on real files — every live Claude session reloads ~/.claude/settings.json.
+9. [x] README, commit, push, CI. ← see progress log
 
 ## Findings / gotchas
 
 - `WebFetch` of docs.claude.com 301s to code.claude.com; big doc pages come
   back as persisted files — grep them rather than trusting the summary.
+- serde_json `Map::remove` is `swap_remove` under `preserve_order` — it
+  reorders keys. Use `shift_remove` for anything written back to a user file
+  (this was a live bug in the skill enable toggle; fixed).
+- A bash heredoc turned `'\\'` into `'\'` in Rust source. Write files with
+  backslash escapes through Write/Edit, not shell heredocs.
+- Git Bash `bin\bash.exe` is a wrapper that spawns the real bash: killing
+  it on timeout leaves a grandchild holding stdout, so the test runner kills
+  the tree (`taskkill /T /F`) and waits at most 1.5 s for the readers.
+- Release builds are GUI-subsystem → every spawned console program flashes
+  a window unless spawned with `CREATE_NO_WINDOW` (`paths::hide_console`).
+- UI Automation can drive the WebView2 app, but Chromium builds its
+  accessibility tree lazily: the first FindAll after launch can come back
+  empty; the next one works. `PrintWindow(hwnd, dc, 2)` captures WebView2.
+- An empty `settings.local.json` next to settings.json made every row show a
+  file badge — badge only when hooks actually come from >1 file.
+- `.fm-field > span` styled every hint span as an uppercase label; scoped to
+  `:first-child`.
+- `@types/bun` coexists with the DOM lib in `tsc` — tests are typechecked.
+
+## Progress log
+
+- [x] Commit `672b066` — fixes found along the way (key reordering, console
+  windows, git prompt hangs, mixed path separators).
+- [x] Commit `4096cf2` — hooks backend.
+- [ ] Hooks UI + tests + docs commit, push, CI green.
 
 ## Open questions for the user
 

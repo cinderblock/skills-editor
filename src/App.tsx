@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
-import { aiListJobs, deleteSkill, discoverSkills, setSkillEnabled } from "./api";
+import { aiListJobs, deleteSkill, discoverSkills, hooksOverview, setSkillEnabled } from "./api";
 import AiTaskDialog, { type AiTarget } from "./components/AiTaskDialog";
 import EditorPane, { type EditorPaneHandle } from "./components/EditorPane";
+import HookEditor, { type HookEditorHandle } from "./components/HookEditor";
+import HooksSidebar from "./components/HooksSidebar";
 import InstallDialog from "./components/InstallDialog";
 import JobsPanel from "./components/JobsPanel";
 import NewSkillDialog from "./components/NewSkillDialog";
@@ -10,7 +12,15 @@ import SettingsDialog from "./components/SettingsDialog";
 import Sidebar from "./components/Sidebar";
 import SyncPanel from "./components/SyncPanel";
 import UpdateBanner from "./components/UpdateBanner";
-import type { JobInfo, OpenFile, Skill, SkillGroup } from "./types";
+import type {
+  HookGroup,
+  HookSelection,
+  HooksOverview,
+  JobInfo,
+  OpenFile,
+  Skill,
+  SkillGroup,
+} from "./types";
 import { useUpdater } from "./updates";
 
 interface Confirm {
@@ -18,10 +28,48 @@ interface Confirm {
   actions: { label: string; kind?: "accent" | "danger"; run: () => void }[];
 }
 
+type View = "skills" | "hooks";
+
+/** A stand-in skill so hook scripts can use the file editor (and AI edits). */
+function scriptFile(path: string, editable: boolean, group: HookGroup | null): OpenFile {
+  const sep = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
+  const dir = path.slice(0, sep);
+  const name = path.slice(sep + 1);
+  const skill: Skill = {
+    id: path,
+    name,
+    description: "",
+    dir,
+    skill_md: "",
+    files: [name],
+    single_file: true,
+    editable,
+    disabled: false,
+  };
+  return {
+    path,
+    skill,
+    kind: "script",
+    group: {
+      key: `hooks:${group?.key ?? dir}`,
+      kind: "extra",
+      label: group?.label ?? "hooks",
+      detail: group?.detail ?? dir,
+      skills: [],
+    },
+  };
+}
+
 export default function App() {
+  const [view, setView] = useState<View>("skills");
   const [groups, setGroups] = useState<SkillGroup[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [hooks, setHooks] = useState<HooksOverview | null>(null);
+  const [hooksError, setHooksError] = useState<string | null>(null);
   const [file, setFile] = useState<OpenFile | null>(null);
+  const [hookSel, setHookSel] = useState<HookSelection | null>(null);
+  /** Which editor owns the main pane. */
+  const [main, setMain] = useState<"file" | "hook">("file");
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState("");
   const [jobs, setJobs] = useState<JobInfo[]>([]);
@@ -33,6 +81,7 @@ export default function App() {
   const [aiTarget, setAiTarget] = useState<AiTarget | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const editorRef = useRef<EditorPaneHandle>(null);
+  const hookEditorRef = useRef<HookEditorHandle>(null);
   const statusTimer = useRef<number | undefined>(undefined);
   const runningIds = useRef<Set<number>>(new Set());
   const updater = useUpdater();
@@ -50,7 +99,7 @@ export default function App() {
       setLoadError(null);
       // Keep the open file's skill object fresh (files list may have changed).
       setFile((current) => {
-        if (!current) return current;
+        if (!current || current.kind === "script") return current;
         for (const g of found) {
           const skill = g.skills.find((s) => s.id === current.skill.id);
           if (skill) return { path: current.path, skill, group: g };
@@ -62,11 +111,31 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  const refreshHooks = useCallback(async (): Promise<HooksOverview | null> => {
+    try {
+      const ov = await hooksOverview();
+      setHooks(ov);
+      setHooksError(null);
+      return ov;
+    } catch (e) {
+      setHooksError(String(e));
+      return null;
+    }
+  }, []);
 
-  // Poll AI jobs; when one finishes, reload the editor and rescan skills.
+  const refreshAll = useCallback(() => {
+    void refresh();
+    void refreshHooks();
+  }, [refresh, refreshHooks]);
+
+  useEffect(() => {
+    refreshAll();
+    // Claude Code and other tools edit these files too — rescan on focus.
+    window.addEventListener("focus", refreshAll);
+    return () => window.removeEventListener("focus", refreshAll);
+  }, [refreshAll]);
+
+  // Poll AI jobs; when one finishes, reload the editor and rescan.
   useEffect(() => {
     const tick = async () => {
       try {
@@ -76,7 +145,7 @@ export default function App() {
         const finished = [...runningIds.current].filter((id) => !nowRunning.has(id));
         if (finished.length > 0) {
           setReloadToken((t) => t + 1);
-          void refresh();
+          refreshAll();
           const failed = list.filter(
             (j) => finished.includes(j.id) && j.status === "failed",
           );
@@ -94,33 +163,65 @@ export default function App() {
     void tick();
     const interval = window.setInterval(() => void tick(), 2000);
     return () => window.clearInterval(interval);
-  }, [refresh, say]);
+  }, [refreshAll, say]);
 
-  const openFile = useCallback(
-    (next: OpenFile) => {
-      if (dirty && editorRef.current?.isDirty()) {
-        setConfirm({
-          message: "You have unsaved changes. Save them before switching files?",
-          actions: [
-            {
-              label: "Save & open",
-              kind: "accent",
-              run: () => {
-                void editorRef.current
-                  ?.save()
-                  .then(() => setFile(next))
-                  .catch(() => {});
-              },
-            },
-            { label: "Discard changes", kind: "danger", run: () => setFile(next) },
-            { label: "Cancel", run: () => {} },
-          ],
-        });
+  /** Run `next` once unsaved work in whichever editor is active is dealt with. */
+  const guard = useCallback(
+    (next: () => void) => {
+      const active = main === "hook" ? hookEditorRef.current : editorRef.current;
+      const proceed = () => {
+        setDirty(false);
+        next();
+      };
+      if (!dirty || !active?.isDirty()) {
+        next();
         return;
       }
-      setFile(next);
+      setConfirm({
+        message: "You have unsaved changes. Save them first?",
+        actions: [
+          {
+            label: "Save & continue",
+            kind: "accent",
+            run: () => {
+              void active
+                .save()
+                .then(() => {
+                  if (!active.isDirty()) proceed();
+                })
+                .catch(() => {});
+            },
+          },
+          { label: "Discard changes", kind: "danger", run: proceed },
+          { label: "Cancel", run: () => {} },
+        ],
+      });
     },
-    [dirty],
+    [dirty, main],
+  );
+
+  const openFile = useCallback(
+    (next: OpenFile) =>
+      guard(() => {
+        setFile(next);
+        setMain("file");
+      }),
+    [guard],
+  );
+
+  const selectHook = useCallback(
+    (sel: HookSelection) =>
+      guard(() => {
+        setHookSel(sel);
+        setMain("hook");
+      }),
+    [guard],
+  );
+
+  const openScript = useCallback(
+    (path: string, editable: boolean, group: HookGroup | null) =>
+      openFile(scriptFile(path, editable, group)),
+    [openFile],
   );
 
   const requestDelete = useCallback(
@@ -167,13 +268,22 @@ export default function App() {
       for (const g of found) {
         const skill = g.skills.find((s) => s.skill_md === skillMdPath);
         if (skill) {
-          setFile({ path: skill.skill_md, skill, group: g });
+          openFile({ path: skill.skill_md, skill, group: g });
           break;
         }
       }
     },
-    [refresh],
+    [refresh, openFile],
   );
+
+  const running = jobs.filter((j) => j.status === "running").length;
+  const unsafeToRestart =
+    [
+      dirty ? "you have unsaved changes" : null,
+      running > 0 ? `${running} AI job${running > 1 ? "s are" : " is"} still running` : null,
+    ]
+      .filter(Boolean)
+      .join(" and ") || null;
 
   return (
     <div className="app">
@@ -188,7 +298,9 @@ export default function App() {
           </button>
           <button
             className="btn"
-            onClick={() => setAiTarget({ mode: "skills", file: file ?? undefined })}
+            onClick={() =>
+              setAiTarget({ mode: "skills", file: file && file.kind !== "script" ? file : undefined })
+            }
           >
             AI task
           </button>
@@ -198,45 +310,85 @@ export default function App() {
           <button className="btn" onClick={() => setShowSettings(true)}>
             Settings
           </button>
-          <button className="btn" onClick={() => void refresh()}>
+          <button className="btn" onClick={refreshAll}>
             Refresh
           </button>
         </div>
         <span className="statusline">{status}</span>
       </div>
 
-      <UpdateBanner
-        updater={updater}
-        unsafeToRestart={(() => {
-          const running = jobs.filter((j) => j.status === "running").length;
-          const reasons = [
-            dirty ? "the open file has unsaved changes" : null,
-            running > 0 ? `${running} AI job${running > 1 ? "s are" : " is"} still running` : null,
-          ].filter(Boolean);
-          return reasons.length > 0 ? reasons.join(" and ") : null;
-        })()}
-      />
+      <UpdateBanner updater={updater} unsafeToRestart={unsafeToRestart} />
 
       <div className="main">
-        {loadError ? (
-          <div className="sidebar">
-            <div className="modal-error">{loadError}</div>
+        <div className="sidebar-shell">
+          <div className="sidebar-tabs">
+            {(["skills", "hooks"] as View[]).map((v) => (
+              <button
+                key={v}
+                className={`sidebar-tab${view === v ? " active" : ""}`}
+                onClick={() => setView(v)}
+              >
+                {v === "skills" ? "Skills" : "Hooks"}
+              </button>
+            ))}
           </div>
+          {view === "skills" ? (
+            loadError ? (
+              <div className="sidebar">
+                <div className="modal-error sidebar-error">{loadError}</div>
+              </div>
+            ) : (
+              <Sidebar
+                groups={groups}
+                selectedPath={main === "file" ? (file?.path ?? null) : null}
+                onOpen={openFile}
+              />
+            )
+          ) : (
+            <HooksSidebar
+              overview={hooks}
+              error={hooksError}
+              selection={main === "hook" ? hookSel : null}
+              selectedPath={main === "file" ? (file?.path ?? null) : null}
+              onSelect={selectHook}
+              onOpenScript={(group, s) => openScript(s.path, s.editable, group)}
+              onNew={() => {
+                const current =
+                  hookSel?.kind === "handler" ? hookSel.file : null;
+                selectHook({ kind: "new", file: current });
+              }}
+            />
+          )}
+        </div>
+        {main === "hook" && hookSel ? (
+          <HookEditor
+            key={JSON.stringify(hookSel)}
+            ref={hookEditorRef}
+            overview={hooks}
+            selection={hookSel}
+            reload={refreshHooks}
+            onSelect={(sel) => {
+              setHookSel(sel);
+              if (!sel) setMain("file");
+            }}
+            onStatus={say}
+            onDirtyChange={setDirty}
+            onOpenScript={openScript}
+          />
         ) : (
-          <Sidebar groups={groups} selectedPath={file?.path ?? null} onOpen={openFile} />
+          <EditorPane
+            ref={editorRef}
+            file={main === "file" ? file : null}
+            reloadToken={reloadToken}
+            onStatus={say}
+            onDirtyChange={setDirty}
+            onDeleteSkill={requestDelete}
+            onToggleDisabled={toggleDisabled}
+            onAiSelection={(f, selection) =>
+              setAiTarget({ mode: "selection", file: f, selection })
+            }
+          />
         )}
-        <EditorPane
-          ref={editorRef}
-          file={file}
-          reloadToken={reloadToken}
-          onStatus={say}
-          onDirtyChange={setDirty}
-          onDeleteSkill={requestDelete}
-          onToggleDisabled={toggleDisabled}
-          onAiSelection={(f, selection) =>
-            setAiTarget({ mode: "selection", file: f, selection })
-          }
-        />
       </div>
 
       <JobsPanel jobs={jobs} onChanged={() => void aiListJobs().then(setJobs)} />
@@ -258,7 +410,7 @@ export default function App() {
           onClose={() => setShowSettings(false)}
           onSaved={() => {
             say("Settings saved");
-            void refresh();
+            refreshAll();
           }}
         />
       )}
