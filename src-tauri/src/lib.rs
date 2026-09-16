@@ -2,6 +2,7 @@ mod ai;
 mod discovery;
 mod files;
 mod git;
+mod hooks;
 mod install;
 mod overrides;
 mod paths;
@@ -72,7 +73,7 @@ fn sync_init(app: tauri::AppHandle) -> Result<String, String> {
 #[tauri::command]
 fn sync_snapshot(app: tauri::AppHandle) -> Result<String, String> {
     let settings = settings::load(&app);
-    sync::snapshot(&settings)
+    sync::snapshot(&settings, &settings::disabled_hooks_file(&app)?)
 }
 
 #[tauri::command]
@@ -106,6 +107,59 @@ fn install_skill(
 #[tauri::command]
 fn set_skill_enabled(skill_dir: String, enabled: bool) -> Result<String, String> {
     overrides::set_skill_enabled(&skill_dir, enabled)
+}
+
+#[tauri::command]
+fn hooks_overview(app: tauri::AppHandle) -> Result<hooks::HooksOverview, String> {
+    let settings = settings::load(&app);
+    hooks::overview(&settings, Some(&settings::disabled_hooks_file(&app)?))
+}
+
+#[tauri::command]
+fn hooks_set(file: String, expected_hash: String, hooks: serde_json::Value) -> Result<String, String> {
+    hooks::set_hooks(std::path::Path::new(&file), &expected_hash, &hooks)
+}
+
+#[tauri::command]
+fn hooks_set_disable_all(file: String, expected_hash: String, disabled: bool) -> Result<String, String> {
+    hooks::set_disable_all(std::path::Path::new(&file), &expected_hash, disabled)
+}
+
+#[tauri::command]
+fn hooks_disable(
+    app: tauri::AppHandle,
+    file: String,
+    expected_hash: String,
+    event: String,
+    group: usize,
+    handler: usize,
+) -> Result<(), String> {
+    hooks::disable_hook(
+        std::path::Path::new(&file),
+        &expected_hash,
+        &event,
+        group,
+        handler,
+        &settings::disabled_hooks_file(&app)?,
+    )
+}
+
+#[tauri::command]
+fn hooks_enable(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    hooks::enable_hook(&id, &settings::disabled_hooks_file(&app)?)
+}
+
+#[tauri::command]
+fn hooks_delete_parked(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    hooks::delete_parked(&id, &settings::disabled_hooks_file(&app)?)
+}
+
+/// Runs a hook command; async so a slow hook never blocks the UI thread.
+#[tauri::command]
+async fn hooks_test(request: hooks::TestRequest) -> Result<hooks::TestResult, String> {
+    tauri::async_runtime::spawn_blocking(move || hooks::run_test(request))
+        .await
+        .map_err(|e| format!("test runner crashed: {e}"))?
 }
 
 #[tauri::command]
@@ -162,6 +216,13 @@ pub fn run() {
             sync_pull,
             install_skill,
             set_skill_enabled,
+            hooks_overview,
+            hooks_set,
+            hooks_set_disable_all,
+            hooks_disable,
+            hooks_enable,
+            hooks_delete_parked,
+            hooks_test,
             ai_start_job,
             ai_list_jobs,
             ai_job_output,

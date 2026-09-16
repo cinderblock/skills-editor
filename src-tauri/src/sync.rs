@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -7,6 +8,7 @@ use serde::Serialize;
 use crate::discovery::{discover, SkillGroup};
 use crate::files::remove_dir_all_robust;
 use crate::git;
+use crate::hooks::{self, HookGroup};
 use crate::settings::Settings;
 
 #[derive(Serialize)]
@@ -101,6 +103,8 @@ pub fn init(settings: &Settings) -> Result<String, String> {
             - `user/<skill>/` — user-level skills (`~/.claude/skills`)\n\
             - `projects/<project>/<skill>/` — per-project skills\n\
             - `extra/<root>/<skill>/` — skills from extra configured roots\n\
+            - `hooks/user/`, `hooks/projects/<project>/` — hook config from each\n  \
+            settings file, plus the scripts those hooks run (`scripts/`)\n\
             - `manifest.json` — maps repo paths back to their source locations\n\n\
             Share skills between hosts by pushing to a common remote and\n\
             cherry-picking between host branches.\n";
@@ -118,6 +122,9 @@ pub fn init(settings: &Settings) -> Result<String, String> {
 struct ManifestEntry {
     repo_dir: String,
     source: String,
+    /// "skill" | "hooks" | "hook-script" | "disabled-hooks"
+    kind: &'static str,
+    /// Display name (the skill name for skills; kept for older readers).
     skill: String,
 }
 
@@ -169,7 +176,98 @@ fn unique_label(label: &str, taken: &mut Vec<String>) -> String {
     candidate
 }
 
-pub fn snapshot(settings: &Settings) -> Result<String, String> {
+/// Write each user/project settings file's hook config and its scripts:
+///
+/// - `hooks/<scope>/<settings file>` — `{"hooks": …, "disableAllHooks": …}`
+/// - `hooks/<scope>/scripts/…` — scripts from the scope's `.claude/hooks`
+///   dir; referenced scripts elsewhere go under `scripts/external/`
+/// - `hooks/disabled-hooks.json` — hooks disabled from the app
+///
+/// Managed, plugin and frontmatter hooks aren't this machine's own config
+/// (frontmatter hooks travel with their skill). Returns files written.
+fn snapshot_hooks(
+    repo: &Path,
+    hook_groups: &[HookGroup],
+    project_dirs: &HashMap<String, String>,
+    sidecar: &Path,
+    manifest: &mut Manifest,
+) -> Result<usize, String> {
+    let mut written = 0usize;
+    let rel = |p: &Path| p.strip_prefix(repo).unwrap_or(p).to_string_lossy().replace('\\', "/");
+    for group in hook_groups {
+        let scope = match group.kind.as_str() {
+            "user" => repo.join("hooks").join("user"),
+            "project" => repo.join("hooks").join("projects").join(&project_dirs[&group.key]),
+            _ => continue,
+        };
+        for src in &group.sources {
+            let has_hooks = src.hooks.as_object().map(|o| !o.is_empty()).unwrap_or(false);
+            if !src.exists || !(has_hooks || src.disable_all_hooks) {
+                continue;
+            }
+            let mut doc = serde_json::Map::new();
+            if has_hooks {
+                doc.insert("hooks".into(), src.hooks.clone());
+            }
+            if src.disable_all_hooks {
+                doc.insert("disableAllHooks".into(), true.into());
+            }
+            let dst = scope.join(&src.file_label);
+            fs::create_dir_all(&scope).map_err(|e| format!("cannot create {}: {e}", scope.display()))?;
+            let text = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())? + "\n";
+            fs::write(&dst, text).map_err(|e| format!("cannot write {}: {e}", dst.display()))?;
+            written += 1;
+            manifest.entries.push(ManifestEntry {
+                repo_dir: rel(&dst),
+                source: src.file.clone(),
+                kind: "hooks",
+                skill: format!("{} hooks ({})", group.label, src.file_label),
+            });
+        }
+        let hooks_dir = PathBuf::from(&group.detail).join("hooks");
+        for script in &group.scripts {
+            let path = PathBuf::from(&script.path);
+            if !path.is_file() {
+                continue;
+            }
+            let inside = path.strip_prefix(&hooks_dir).ok().map(Path::to_path_buf);
+            let dst = match inside {
+                Some(r) => scope.join("scripts").join(r),
+                None => scope
+                    .join("scripts")
+                    .join("external")
+                    .join(path.file_name().unwrap_or_default()),
+            };
+            if let Some(parent) = dst.parent() {
+                fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+            }
+            fs::copy(&path, &dst).map_err(|e| format!("cannot copy {}: {e}", path.display()))?;
+            written += 1;
+            manifest.entries.push(ManifestEntry {
+                repo_dir: rel(&dst),
+                source: script.path.clone(),
+                kind: "hook-script",
+                skill: script.name.clone(),
+            });
+        }
+    }
+    let parked = hooks::load_sidecar(sidecar)?;
+    if !parked.hooks.is_empty() {
+        let dst = repo.join("hooks").join("disabled-hooks.json");
+        fs::create_dir_all(repo.join("hooks")).map_err(|e| e.to_string())?;
+        fs::copy(sidecar, &dst).map_err(|e| format!("cannot copy disabled hooks: {e}"))?;
+        written += 1;
+        manifest.entries.push(ManifestEntry {
+            repo_dir: rel(&dst),
+            source: sidecar.to_string_lossy().to_string(),
+            kind: "disabled-hooks",
+            skill: format!("{} disabled hooks", parked.hooks.len()),
+        });
+    }
+    Ok(written)
+}
+
+pub fn snapshot(settings: &Settings, sidecar: &Path) -> Result<String, String> {
     let repo = settings.effective_repo_path()?;
     if !git::is_repo(&repo) {
         return Err("tracking repo is not initialized yet".into());
@@ -183,6 +281,7 @@ pub fn snapshot(settings: &Settings) -> Result<String, String> {
     }
 
     let groups: Vec<SkillGroup> = discover(settings)?;
+    let hook_groups = hooks::overview(settings, None)?.groups;
     let mut manifest = Manifest {
         hostname: host.clone(),
         generated_at_epoch_secs: SystemTime::now()
@@ -193,20 +292,31 @@ pub fn snapshot(settings: &Settings) -> Result<String, String> {
     };
 
     // Rebuild the snapshot dirs from scratch so deletions propagate.
-    for sub in ["user", "projects", "extra"] {
+    for sub in ["user", "projects", "extra", "hooks"] {
         remove_dir_all_robust(&repo.join(sub))?;
     }
 
-    let mut skill_count = 0usize;
+    // One directory name per project, shared by its skills and its hooks.
+    // Skill projects are named first so their existing paths stay stable.
     let mut project_labels: Vec<String> = Vec::new();
+    let mut project_dirs: HashMap<String, String> = HashMap::new();
+    let project_groups = groups
+        .iter()
+        .filter(|g| g.kind == "project")
+        .map(|g| (&g.key, &g.label))
+        .chain(hook_groups.iter().filter(|g| g.kind == "project").map(|g| (&g.key, &g.label)));
+    for (key, label) in project_groups {
+        if !project_dirs.contains_key(key) {
+            project_dirs.insert(key.clone(), unique_label(label, &mut project_labels));
+        }
+    }
+
+    let mut skill_count = 0usize;
     let mut extra_labels: Vec<String> = Vec::new();
     for group in &groups {
         let base: Option<PathBuf> = match group.kind.as_str() {
             "user" => Some(repo.join("user")),
-            "project" => Some(
-                repo.join("projects")
-                    .join(unique_label(&group.label, &mut project_labels)),
-            ),
+            "project" => Some(repo.join("projects").join(&project_dirs[&group.key])),
             "extra" => Some(
                 repo.join("extra")
                     .join(unique_label(&group.label, &mut extra_labels)),
@@ -232,10 +342,13 @@ pub fn snapshot(settings: &Settings) -> Result<String, String> {
                     .to_string_lossy()
                     .replace('\\', "/"),
                 source: skill.dir.clone(),
+                kind: "skill",
                 skill: skill.name.clone(),
             });
         }
     }
+
+    let hook_count = snapshot_hooks(&repo, &hook_groups, &project_dirs, sidecar, &mut manifest)?;
 
     let manifest_text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
     fs::write(repo.join("manifest.json"), manifest_text)
@@ -247,7 +360,9 @@ pub fn snapshot(settings: &Settings) -> Result<String, String> {
         return Ok("No changes since last snapshot".into());
     }
     let changed = porcelain.lines().count();
-    let msg = format!("Snapshot from {host}: {skill_count} skills, {changed} files changed");
+    let msg = format!(
+        "Snapshot from {host}: {skill_count} skills, {hook_count} hook files, {changed} files changed"
+    );
     git::run(&repo, &["commit", "-m", &msg])?;
     let summary = git::run(&repo, &["log", "-1", "--format=%h %s"])?;
     Ok(summary.trim().to_string())

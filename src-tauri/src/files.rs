@@ -5,14 +5,16 @@ use crate::discovery::allowed_roots;
 use crate::paths::is_within;
 use crate::settings::Settings;
 
-/// Guard: the path must live inside one of the known skills roots.
+/// Guard: the path must live inside a known skills root, a hooks/agents dir,
+/// or be a script a discovered hook runs.
 fn check_allowed(path: &Path, settings: &Settings) -> Result<(), String> {
-    let ok = allowed_roots(settings).iter().any(|root| is_within(path, root));
-    if ok {
+    let within = |roots: Vec<PathBuf>| roots.iter().any(|root| is_within(path, root));
+    // Skills roots are cheap to compute; hook discovery only when needed.
+    if within(allowed_roots(settings)) || within(crate::hooks::allowed_paths(settings)) {
         Ok(())
     } else {
         Err(format!(
-            "{} is outside every known skills location; refusing to touch it",
+            "{} is outside every known skills or hooks location; refusing to touch it",
             path.display()
         ))
     }

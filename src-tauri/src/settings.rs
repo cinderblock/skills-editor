@@ -26,12 +26,22 @@ impl Settings {
     }
 }
 
-fn settings_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+/// A file in the app's own config dir.
+pub fn app_file(app: &tauri::AppHandle, name: &str) -> Result<PathBuf, String> {
     let dir = app
         .path()
         .app_config_dir()
         .map_err(|e| format!("no app config dir: {e}"))?;
-    Ok(dir.join("settings.json"))
+    Ok(dir.join(name))
+}
+
+fn settings_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app_file(app, "settings.json")
+}
+
+/// Where hooks disabled from the app are parked.
+pub fn disabled_hooks_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app_file(app, "disabled-hooks.json")
 }
 
 pub fn load(app: &tauri::AppHandle) -> Settings {
