@@ -42,17 +42,27 @@ tag-triggered release workflow that builds a signed Windows installer, and wire
 ## Plan / steps
 
 1. [x] History scan for personal strings.
-2. [ ] Backup branch + safety stash; rewrite in temp clone; verify; swap refs.
-   ← current
-3. [ ] Updater: Rust + JS plugins, capabilities, `createUpdaterArtifacts`,
-   pubkey + endpoint, in-app update check UI.
-4. [ ] Signing keypair generated; password file verified.
-5. [ ] CI + release workflows (Bun).
-6. [ ] Local checks green (`bun run build`, `cargo check`/`test`).
-7. [ ] README install/update/release docs.
-8. [ ] Create public repo, push `master`, set secrets, confirm CI green.
-9. [ ] Hand back: user pushes `v0.1.0` tag; then verify release assets and
-   `releases/latest/download/latest.json`.
+2. [x] Backup branch `backup/pre-scrub` (tree was clean, so no stash needed);
+   rewrite in temp clone; verified 0 hits (control: 10 in original); swapped
+   `master` via `git reset --mixed`; temp clone deleted.
+3. [x] Updater: `tauri-plugin-updater` + `tauri-plugin-process` (Rust + JS),
+   capabilities `updater:default` + `process:allow-restart`,
+   `createUpdaterArtifacts`, pubkey + endpoint, `src/updates.ts` hook,
+   `UpdateBanner`, version + manual check in Settings.
+4. [x] Signing keypair at `~/.tauri/skills-editor.key` (+ `.password`,
+   `.pub`); password file read back and verified; key+password verified by
+   signing a test file.
+5. [x] CI + release workflows (Bun). Release has a tag↔version guard
+   (tested locally: v0.1.0 passes, v0.2.0 fails naming all three files).
+6. [x] Local checks green: `bun run build`, `cargo test` 11/11.
+7. [x] README install/update/release docs; MIT LICENSE added.
+8. [x] Public repo https://github.com/cinderblock/skills-editor created
+   (default branch `master`, MIT detected); secrets set; only `master`
+   pushed; first CI run green (frontend + rust).
+9. [ ] ← current. Hand back: user pushes the `v0.1.0` tag; then verify the
+   release workflow, assets, and `releases/latest/download/latest.json`.
+10. [ ] Real end-to-end update test needs the NEXT release (v0.1.1): an
+   installed v0.1.0 should show the banner and install + restart.
 
 ## Findings / gotchas
 
@@ -65,6 +75,22 @@ tag-triggered release workflow that builds a signed Windows installer, and wire
     CI must build the frontend before any cargo command.
   - CI may lack types that local hoisting provides.
 
+- Git Bash `grep -icF` on `git log -p` output aborted with core dumps, and
+  `grep -E` rejected a pattern with a trailing backslash ("Trailing
+  backslash") while the `|| echo clean` fallback printed a false "clean".
+  Verify scrubs with `git grep -F -l <pat> <rev>` over `git rev-list`, and
+  include a control count against the unscrubbed history.
+- Key files from `tauri signer generate` have no trailing newline, so
+  `gh secret set NAME < file` (bash redirect) stores them exactly.
+
+## Remaining / follow-ups
+
+- Local-only leftover: branch `backup/pre-scrub` holds the unscrubbed history
+  — never push it; delete once v0.1.0 is out and verified.
+- App icons are still the Tauri defaults.
+- Back up `~/.tauri/skills-editor.key` + password somewhere durable; losing
+  them strands every installed copy on its current version.
+
 ## Things not to do
 
 - Don't push until the history greps are clean.
@@ -75,3 +101,8 @@ tag-triggered release workflow that builds a signed Windows installer, and wire
 ## Progress log
 
 - [x] Repo confirmed unpublished; scan done (one path hit).
+- [x] History rewritten + verified (16 commits on `master` after new work).
+- [x] Updater wired, signed, secrets set.
+- [x] Published; CI green on `master` (run 35142461510).
+- [ ] v0.1.0 tag pushed by user → release workflow green → assets and
+  `latest.json` verified.
