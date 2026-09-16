@@ -9,7 +9,9 @@ import NewSkillDialog from "./components/NewSkillDialog";
 import SettingsDialog from "./components/SettingsDialog";
 import Sidebar from "./components/Sidebar";
 import SyncPanel from "./components/SyncPanel";
+import UpdateBanner from "./components/UpdateBanner";
 import type { JobInfo, OpenFile, Skill, SkillGroup } from "./types";
+import { useUpdater } from "./updates";
 
 interface Confirm {
   message: string;
@@ -33,6 +35,7 @@ export default function App() {
   const editorRef = useRef<EditorPaneHandle>(null);
   const statusTimer = useRef<number | undefined>(undefined);
   const runningIds = useRef<Set<number>>(new Set());
+  const updater = useUpdater();
 
   const say = useCallback((msg: string) => {
     setStatus(msg);
@@ -202,6 +205,18 @@ export default function App() {
         <span className="statusline">{status}</span>
       </div>
 
+      <UpdateBanner
+        updater={updater}
+        unsafeToRestart={(() => {
+          const running = jobs.filter((j) => j.status === "running").length;
+          const reasons = [
+            dirty ? "the open file has unsaved changes" : null,
+            running > 0 ? `${running} AI job${running > 1 ? "s are" : " is"} still running` : null,
+          ].filter(Boolean);
+          return reasons.length > 0 ? reasons.join(" and ") : null;
+        })()}
+      />
+
       <div className="main">
         {loadError ? (
           <div className="sidebar">
@@ -239,6 +254,7 @@ export default function App() {
       {showSync && <SyncPanel onClose={() => setShowSync(false)} onStatus={say} />}
       {showSettings && (
         <SettingsDialog
+          updater={updater}
           onClose={() => setShowSettings(false)}
           onSaved={() => {
             say("Settings saved");

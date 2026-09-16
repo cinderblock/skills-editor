@@ -143,6 +143,8 @@ fn ai_clear_finished(state: tauri::State<ai::JobState>) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(ai::new_state())
         .invoke_handler(tauri::generate_handler![
             discover_skills,

@@ -3,6 +3,8 @@ name = "skills-editor"
 version = "0.1.0"
 description = "A small IDE for managing AI agent skills"
 authors = ["Cameron Tacklind"]
+license = "MIT"
+repository = "https://github.com/cinderblock/skills-editor"
 edition = "2021"
 
 [lib]
@@ -20,3 +22,5 @@ serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml = "0.9"
 walkdir = "2"
 gethostname = "1"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"

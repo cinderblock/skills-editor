@@ -109,6 +109,74 @@ body,
   font-size: 12px;
 }
 
+/* ---- update banner ---- */
+.update-banner {
+  flex: none;
+  padding: 6px 12px;
+  background: #1f2d3d;
+  border-bottom: 1px solid var(--accent-dim);
+  font-size: 13px;
+}
+
+.update-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.update-text {
+  margin-right: 4px;
+}
+
+.update-current {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-left: 8px;
+}
+
+.update-progress {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.update-warning {
+  margin-top: 4px;
+  color: var(--warn);
+  font-size: 12px;
+}
+
+.update-notes {
+  margin: 6px 0 2px;
+  padding: 8px 10px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.version-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.version-status {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.version-status.error {
+  color: var(--danger);
+}
+
 /* ---- layout ---- */
 .main {
   display: flex;

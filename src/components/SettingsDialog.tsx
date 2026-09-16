@@ -1,13 +1,37 @@
 import { useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { getSettings, saveSettings } from "../api";
+import type { Updater } from "../updates";
+
+function updateStatusText(updater: Updater): string | null {
+  const { phase } = updater;
+  switch (phase.kind) {
+    case "checking":
+      return "Checking…";
+    case "none":
+      return "You're on the latest version.";
+    case "available":
+      return `v${phase.update.version} is available — see the banner at the top.`;
+    case "downloading":
+    case "installing":
+      return `Installing v${phase.update.version}…`;
+    case "error":
+      return phase.message;
+    default:
+      return null;
+  }
+}
 
 export default function SettingsDialog({
+  updater,
   onClose,
   onSaved,
 }: {
+  updater: Updater;
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const [version, setVersion] = useState<string | null>(null);
   const [repoPath, setRepoPath] = useState("");
   const [remoteUrl, setRemoteUrl] = useState("");
   const [extraRoots, setExtraRoots] = useState("");
@@ -15,6 +39,7 @@ export default function SettingsDialog({
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
+    void getVersion().then(setVersion);
     void getSettings()
       .then((s) => {
         setRepoPath(s.repo_path ?? "");
@@ -72,6 +97,23 @@ export default function SettingsDialog({
           />
         </label>
         {error && <div className="modal-error">{error}</div>}
+        <div className="version-row">
+          <span>Skills Editor {version ? `v${version}` : ""}</span>
+          <button
+            className="btn small"
+            disabled={updater.phase.kind === "checking"}
+            onClick={() => void updater.checkNow()}
+          >
+            Check for updates
+          </button>
+          {updateStatusText(updater) && (
+            <span
+              className={`version-status${updater.phase.kind === "error" ? " error" : ""}`}
+            >
+              {updateStatusText(updater)}
+            </span>
+          )}
+        </div>
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>
             Cancel

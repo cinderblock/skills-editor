@@ -21,9 +21,21 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY0NjQ3MDlBM0YxNjcyQzIKUldUQ2NoWS9tbkJrOUZBNTVSY3NKajlIdVRxMW1iNGVINGNraGZRWWRwbXZsRDk3elpBYnF0U2MK",
+      "endpoints": [
+        "https://github.com/cinderblock/skills-editor/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
