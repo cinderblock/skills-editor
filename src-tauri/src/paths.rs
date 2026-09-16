@@ -35,3 +35,27 @@ pub fn is_within(path: &Path, root: &Path) -> bool {
         _ => false,
     }
 }
+
+/// A comparable form of a path: verbatim prefix stripped, separators
+/// normalized, and case-folded on Windows (whose filesystem is
+/// case-insensitive). Use for equality, never for display or I/O.
+pub fn path_key(path: &Path) -> String {
+    let s = strip_verbatim(path).to_string_lossy().to_string();
+    if cfg!(windows) {
+        s.replace('/', "\\").trim_end_matches('\\').to_lowercase()
+    } else {
+        s.trim_end_matches('/').to_string()
+    }
+}
+
+/// Keep console programs we spawn (git, claude, hook scripts) from popping
+/// up a console window — release builds are GUI-subsystem apps on Windows.
+pub fn hide_console(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}

@@ -105,7 +105,7 @@ fn skill_overrides(claude_like_dir: &Path) -> HashMap<String, String> {
 }
 
 /// Plugins turned off via enabledPlugins in user settings ("plugin@marketplace").
-fn disabled_plugins() -> HashSet<String> {
+pub(crate) fn disabled_plugins() -> HashSet<String> {
     let Ok(claude) = claude_dir() else { return HashSet::new() };
     let mut set = HashSet::new();
     for name in ["settings.json", "settings.local.json"] {
@@ -193,7 +193,7 @@ pub fn scan_skills_root(
 }
 
 /// Project paths registered in ~/.claude.json (`projects` object keys).
-fn claude_project_paths() -> Vec<PathBuf> {
+pub(crate) fn claude_project_paths() -> Vec<PathBuf> {
     let Ok(home) = home_dir() else { return Vec::new() };
     let file = home.join(".claude.json");
     let Ok(text) = fs::read_to_string(&file) else {
@@ -202,9 +202,15 @@ fn claude_project_paths() -> Vec<PathBuf> {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
         return Vec::new();
     };
+    // Keys are stored with forward slashes; use native separators so joined
+    // paths don't come out mixed ("C:/…/proj\.claude").
     v.get("projects")
         .and_then(|p| p.as_object())
-        .map(|o| o.keys().map(PathBuf::from).collect())
+        .map(|o| {
+            o.keys()
+                .map(|k| PathBuf::from(k.replace('/', std::path::MAIN_SEPARATOR_STR)))
+                .collect()
+        })
         .unwrap_or_default()
 }
 

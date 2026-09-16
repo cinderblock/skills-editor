@@ -159,7 +159,8 @@ pub fn start_job(
         args.push("--model");
         args.push(m);
     }
-    let mut child = Command::new("claude")
+    let mut cmd = Command::new("claude");
+    let mut child = crate::paths::hide_console(&mut cmd)
         .current_dir(&dir)
         .args(&args)
         .stdin(Stdio::null())

@@ -71,11 +71,11 @@ pub fn set_skill_enabled(skill_dir: &str, enabled: bool) -> Result<String, Strin
 
     // Clear the key everywhere first; then write "off" if disabling.
     edit_file(&local, false, |o| {
-        o.remove(&name);
+        o.shift_remove(&name);
     })?;
     if enabled {
         edit_file(&main, false, |o| {
-            o.remove(&name);
+            o.shift_remove(&name);
         })?;
         Ok(format!("Enabled {name}"))
     } else {
