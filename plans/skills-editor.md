@@ -60,7 +60,12 @@ repo so they can be shared between hosts (per-host branches, cherry-pick friendl
 7. [x] README, commit at logical steps.  ← all committed, see progress log
 8. [x] Smoke test: `bun run tauri dev` compiled (3m00s dev build), app process
        launched and stayed alive, vite served 200. Killed after verification.
-       NOT yet exercised end-to-end by a human: install flow, sync flow, AI jobs.
+       NOT yet exercised end-to-end by a human: install flow, sync flow.
+9. [x] Follow-ups from use: mattpocock catalog source, dedicated dev ports
+       27391/27392, disabled-state display + editor-header toggle (NOT in the
+       sidebar rows — user wants the list compact), newline-flicker fix,
+       discovery dedupe, model selector, structured AI responses.
+10. [ ] Publish + self-update — tracked in `plans/release-pipeline.md`.
 
 ## Findings / gotchas
 
@@ -90,44 +95,56 @@ repo so they can be shared between hosts (per-host branches, cherry-pick friendl
 - `plugin:opener` ACL identifier in capabilities is `opener:default`.
 - CodeMirror needs explicit `basicSetup` height CSS (`.cm-editor { height: 100% }`).
 - vite build warns >500kB chunk (CodeMirror langs) — fine for a desktop app.
-- `is_skill_file_path` guard: canonicalize + prefix check keeps writes inside skill dirs.
+- Write guard (`files.rs` `check_allowed`): canonicalize + prefix check against the
+  known skills roots keeps writes inside them.
 - Windows `git` shell-out: pass `-C <repo>` rather than setting cwd; avoids UNC/verbatim
   path issues with canonicalized paths (`\\?\C:\...`). std::process on Windows does not
   use a shell, so no quoting issues, but AVOID canonicalized paths as `-C` args — strip
-  the `\\?\` prefix (helper `dunce`-style strip implemented in git.rs).
+  the `\\?\` prefix (`paths::strip_verbatim`).
+- Skills are disabled via `skillOverrides` (`"<name>": "off"`) in the scope's
+  `settings.json`, with `settings.local.json` winning; plugins via
+  `enabledPlugins: false`. Toggling rewrites settings.json, so serde_json uses
+  `preserve_order` to keep the user's key order.
+- Frontmatter extraction on CRLF files left a trailing `\r` (matched `\n---\r\n`
+  first) — caught by a unit test, fixed.
+- AI job output parsing must use stdout only; stderr used to be appended first,
+  which could break the JSON parse.
 
 ## Progress log
 
 - [x] Env verified (bun/rust/git), skill layouts inspected, project source confirmed
 - [x] git init on master; scaffold moved into place
 - [x] Plan doc created
-- [x] Rust backend modules: error.rs, paths.rs (dunce-strip helper), git.rs (safe git
+- [x] Rust backend modules: paths.rs (verbatim-prefix strip), git.rs (safe git
       runner; force-push structurally impossible — args are fixed per command),
       discovery.rs, files.rs (guarded read/write/create/delete), settings.rs,
-      sync.rs (init/status/snapshot/branches/push/pull/checkout_file), install.rs
-      (shallow clone + copy), lib.rs wiring. `cargo check` clean.
+      sync.rs (init/status/snapshot/fetch/pull/push), install.rs
+      (shallow clone + copy), overrides.rs (enable/disable), lib.rs wiring.
 - [x] Frontend: types.ts, api.ts (typed invoke wrappers), App.tsx (3-pane layout),
       Sidebar (groups → skills → conditional file tree), EditorPane (frontmatter
       key/value panel + CodeMirror body, dirty tracking, Ctrl+S), InstallDialog
       (GitHub live listing + lazy SKILL.md preview), SyncPanel (init/snapshot/
       branches/push/pull), SettingsDialog (repo path, remote, extra roots),
       NewSkillDialog. `bun run build` (tsc + vite) clean.
-- [x] AI job runner: ai.rs (spawn `claude -p <prompt> --permission-mode acceptEdits`
-      in the skill dir, threads drain stdout/stderr, status map in tauri State),
+- [x] AI job runner: ai.rs (spawn `claude -p <prompt> --allowedTools Read,Glob,Grep
+      [--model m]` in the skill dir, threads drain stdout/stderr, parse + apply
+      the structured JSON response, status map in tauri State),
       AiTaskDialog (selection mode + multi-skill mode with templated prompts),
       JobsPanel (poll every 2s, cancel, expand output), App bumps a reloadToken on
       job completion so EditorPane re-checks disk freshness
 - [x] README rewritten for the actual app
 - [x] Commits: scaffold → backend → frontend → README (4 logical commits on master)
 - [x] Smoke test via `bun run tauri dev`: launch verified, then cleaned up
-      (process killed, port 1420 freed, CPU-broker slots released)
-- [x] WIP tracker entry added (P:\Projects\WIP\personal\skills-editor.md)
+      (process killed, dev port freed, CPU-broker slots released)
+- [x] WIP tracker entry added (personal WIP tracker, `skills-editor.md`)
+- [x] Rust unit tests: AI response parsing + path safety, frontmatter extraction.
 
 ## Open questions for the user
 
 1. Which other agents' skill formats to support next? (Codex `~/.codex`, Cursor rules,
    OpenCode, Windsurf…) — recommend Codex first; format is nearly identical.
-2. Catalog curation: happy with anthropics/skills + obra/superpowers as seed repos?
+2. Catalog curation: happy with anthropics/skills, mattpocock/skills, and
+   obra/superpowers as seed repos?
    Easy to extend — it's a const list in `src/catalog.ts`.
 3. Cherry-pick UX between host branches: v1 ships branch list + fetch/pull/push. A
    "diff two hosts, pick skills to copy" view is the natural next step — worth it?
@@ -138,5 +155,6 @@ repo so they can be shared between hosts (per-host branches, cherry-pick friendl
 - Don't force-push from sync code, ever (hook blocks it; also structurally excluded).
 - No `title=` attributes anywhere in the UI (global rule; touch devices).
 - Don't run `bun run tauri build` casually — full Rust release build, minutes of CPU;
-  `cargo check` + `bun run build` is the validation loop.
+  `bun run build` + `cargo test` is the validation loop. Release builds come
+  from CI only.
 - Don't use `npm`/`package-lock.json` — Bun only.

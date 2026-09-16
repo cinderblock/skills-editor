@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      # tsc + vite build
+      - run: bun run build
+
+  rust:
+    # Windows is the only supported platform (see README).
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      # tauri::generate_context! embeds the frontend at compile time, so the
+      # dist directory must exist even for `cargo test`.
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
