@@ -409,3 +409,55 @@ pub fn pull(settings: &Settings) -> Result<String, String> {
     let out = git::run(&repo, &["pull", "--ff-only"])?;
     Ok(if out.trim().is_empty() { "Pulled".into() } else { out.trim().to_string() })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hook_snapshot_writes_config_scripts_and_parked_hooks() {
+        let root = std::env::temp_dir().join(format!(
+            "skills-editor-sync-{}",
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let home = root.join("home");
+        let repo = root.join("repo");
+        crate::paths::TEST_HOME.with(|h| *h.borrow_mut() = Some(home.clone()));
+        let claude = home.join(".claude");
+        fs::create_dir_all(claude.join("hooks").join("lib")).unwrap();
+        fs::write(claude.join("hooks/guard.sh"), "echo guard").unwrap();
+        fs::write(claude.join("hooks/lib/util.sh"), "echo util").unwrap();
+        fs::create_dir_all(home.join("tools")).unwrap();
+        fs::write(home.join("tools/ext.py"), "print()").unwrap();
+        fs::write(
+            claude.join("settings.json"),
+            r#"{"model":"x","disableAllHooks":true,"hooks":{"Stop":[{"hooks":[
+                {"type":"command","command":"bash ~/.claude/hooks/guard.sh"},
+                {"type":"command","command":"python ~/tools/ext.py"}]}]}}"#,
+        )
+        .unwrap();
+        let sidecar = root.join("disabled-hooks.json");
+        fs::write(&sidecar, r#"{"version":1,"hooks":[{"id":"a","file":"f","event":"Stop","handler":{"type":"prompt","prompt":"p"},"disabled_at":1}]}"#).unwrap();
+
+        let groups = hooks::overview(&Settings::default(), None).unwrap().groups;
+        let mut manifest = Manifest { hostname: "h".into(), generated_at_epoch_secs: 0, entries: Vec::new() };
+        let written = snapshot_hooks(&repo, &groups, &HashMap::new(), &sidecar, &mut manifest).unwrap();
+        crate::paths::TEST_HOME.with(|h| *h.borrow_mut() = None);
+
+        let user = repo.join("hooks").join("user");
+        let cfg: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(user.join("settings.json")).unwrap()).unwrap();
+        assert_eq!(cfg["disableAllHooks"], true);
+        assert_eq!(cfg["hooks"]["Stop"][0]["hooks"].as_array().unwrap().len(), 2);
+        assert!(cfg.get("model").is_none(), "only hook keys are exported");
+        assert_eq!(fs::read_to_string(user.join("scripts/guard.sh")).unwrap(), "echo guard");
+        assert_eq!(fs::read_to_string(user.join("scripts/lib/util.sh")).unwrap(), "echo util");
+        assert_eq!(fs::read_to_string(user.join("scripts/external/ext.py")).unwrap(), "print()");
+        assert!(repo.join("hooks/disabled-hooks.json").is_file());
+        assert_eq!(written, 5);
+        let kinds: Vec<&str> = manifest.entries.iter().map(|e| e.kind).collect();
+        assert_eq!(kinds.iter().filter(|k| **k == "hook-script").count(), 3);
+        assert!(kinds.contains(&"hooks") && kinds.contains(&"disabled-hooks"));
+        let _ = fs::remove_dir_all(root);
+    }
+}

@@ -1742,6 +1742,92 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    /// The full write path through the public operations, against a fake
+    /// home with one registered project.
+    #[test]
+    fn end_to_end_create_disable_enable_delete() {
+        let home = temp_dir("e2e-home");
+        crate::paths::TEST_HOME.with(|h| *h.borrow_mut() = Some(home.clone()));
+        let project = home.join("proj");
+        fs::create_dir_all(project.join(".claude").join("hooks")).unwrap();
+        fs::write(project.join(".claude/hooks/guard.sh"), "#!/bin/sh\nexit 0\n").unwrap();
+        fs::create_dir_all(home.join(".claude")).unwrap();
+        fs::write(
+            home.join(".claude.json"),
+            json!({ "projects": { (project.to_string_lossy().replace('\\', "/")): {} } }).to_string(),
+        )
+        .unwrap();
+        let user_settings = home.join(".claude").join("settings.json");
+        fs::write(&user_settings, "{\n  \"model\": \"opus\",\n  \"permissions\": {}\n}\n").unwrap();
+        let local = project.join(".claude").join("settings.local.json");
+        let sidecar = home.join("app").join("disabled-hooks.json");
+        let settings = Settings::default();
+        let source = |file: &Path| -> HookSource {
+            overview(&settings, Some(&sidecar))
+                .unwrap()
+                .groups
+                .into_iter()
+                .flat_map(|g| g.sources)
+                .find(|s| path_key(Path::new(&s.file)) == path_key(file))
+                .expect("source listed")
+        };
+
+        // Targets include the fake project's (not yet existing) local file.
+        let targets = targets().unwrap();
+        assert!(targets.iter().any(|t| path_key(Path::new(&t.file)) == path_key(&local)));
+        // Files outside the known targets are refused.
+        assert!(set_hooks(&home.join("elsewhere.json"), MISSING_HASH, &json!({})).is_err());
+
+        // Create hooks in the project's local file (doesn't exist yet).
+        let hooks = json!({
+            "PreToolUse": [{ "matcher": "Bash", "hooks": [
+                { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard.sh\"" },
+                { "type": "command", "command": "echo second" }
+            ]}]
+        });
+        assert!(set_hooks(&local, "wrong", &hooks).unwrap_err().starts_with("CONFLICT"));
+        set_hooks(&local, MISSING_HASH, &hooks).unwrap();
+        let src = source(&local);
+        assert_eq!(src.kind, "local");
+        assert_eq!(src.scripts.len(), 1, "guard.sh resolved via CLAUDE_PROJECT_DIR");
+        assert!(src.scripts[0].exists);
+
+        // Disable the first handler: it leaves the file and is parked.
+        disable_hook(&local, &src.hash, "PreToolUse", 0, 0, &sidecar).unwrap();
+        let src = source(&local);
+        assert_eq!(src.hooks["PreToolUse"][0]["hooks"].as_array().unwrap().len(), 1);
+        assert_eq!(src.parked.len(), 1);
+        // A stale hash can't disable again.
+        assert!(disable_hook(&local, "stale", "PreToolUse", 0, 0, &sidecar).is_err());
+
+        // Enable it: back into the Bash group, sidecar emptied.
+        enable_hook(&src.parked[0].id, &sidecar).unwrap();
+        let src = source(&local);
+        assert_eq!(src.hooks["PreToolUse"].as_array().unwrap().len(), 1);
+        assert_eq!(src.hooks["PreToolUse"][0]["hooks"].as_array().unwrap().len(), 2);
+        assert!(src.parked.is_empty());
+
+        // disableAllHooks round trip leaves other keys and marks the source inactive.
+        let hash = set_disable_all(&user_settings, &source(&user_settings).hash, true).unwrap();
+        let user = source(&user_settings);
+        assert!(user.disable_all_hooks && user.inactive_reason.is_some());
+        set_disable_all(&user_settings, &hash, false).unwrap();
+        let text = fs::read_to_string(&user_settings).unwrap();
+        assert_eq!(text, "{\n  \"model\": \"opus\",\n  \"permissions\": {}\n}\n", "byte-identical round trip");
+
+        // Clearing the hooks removes the key entirely.
+        set_hooks(&local, &source(&local).hash, &json!({})).unwrap();
+        assert_eq!(fs::read_to_string(&local).unwrap().trim(), "{}");
+
+        // The unreferenced script still shows up for the project.
+        let ov = overview(&settings, Some(&sidecar)).unwrap();
+        let proj = ov.groups.iter().find(|g| g.kind == "project").expect("project group");
+        assert_eq!(proj.scripts.len(), 1);
+        assert!(!proj.scripts[0].referenced);
+
+        crate::paths::TEST_HOME.with(|h| *h.borrow_mut() = None);
+    }
+
     #[test]
     fn test_runner_reports_exit_codes_output_and_timeouts() {
         if git_bash().is_none() {

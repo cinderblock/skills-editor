@@ -1,7 +1,18 @@
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
+thread_local! {
+    /// Tests point "home" at a scratch dir. Thread-local, so parallel tests
+    /// (and the real ~/.claude) are unaffected.
+    pub static TEST_HOME: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
 /// Home directory without relying on the (historically deprecated) std helper.
 pub fn home_dir() -> Result<PathBuf, String> {
+    #[cfg(test)]
+    if let Some(home) = TEST_HOME.with(|h| h.borrow().clone()) {
+        return Ok(home);
+    }
     #[cfg(windows)]
     let var = "USERPROFILE";
     #[cfg(not(windows))]
