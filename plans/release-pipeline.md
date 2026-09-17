@@ -80,9 +80,20 @@ tag-triggered release workflow that builds a signed Windows installer, and wire
    C272163F9A7064F4 (matches tauri.conf.json). Release notes written by
    hand with `gh release edit` — the workflow only sets a one-line body.
    https://github.com/cinderblock/skills-editor/releases/tag/v0.2.0
-11. [ ] ← current. Self-update still untested end to end: install v0.2.0
+11. [x] v0.3.0 released 2026-09-17 — first macOS and Linux builds, plus the
+   process-group fix. CI green on all three platforms (35283699895), release
+   run 35283930700 green for all three matrix jobs. Verified: 14 assets
+   (NSIS + MSI, universal .dmg + .app.tar.gz, AppImage + deb + rpm, and
+   `.sig` for every updater artifact); `latest.json` merged across the three
+   parallel jobs into 11 platform entries, all signed with key
+   C272163F9A7064F4; Windows/Linux/macOS download URLs and the .dmg all
+   return 200; v0.3.0 is the latest release.
+   https://github.com/cinderblock/skills-editor/releases/tag/v0.3.0
+   Note: tauri-action merged the manifest correctly from a matrix — no
+   create/publish job split needed.
+12. [ ] ← current. Self-update still untested end to end: install v0.3.0
    from the release, then the NEXT release should show the banner and
-   install + restart.
+   install + restart. Nobody has run the macOS or Linux build by hand yet.
 
 ## Findings / gotchas
 
