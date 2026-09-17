@@ -73,7 +73,7 @@ thing:
    Checks: 36 Rust, 26 frontend, build clean.
 5. [x] README, commit `96b7806` (amended for quoting), pushed; CI run
    35255998789 green.
-6. [ ] Not released — needs a version bump + tag when the user wants one.
+6. [x] Shipped in v0.2.0 (2026-09-17).
 
 ## Findings
 

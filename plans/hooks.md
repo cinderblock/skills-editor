@@ -163,6 +163,7 @@ agents' hook formats.
 - [x] Commit `5b7b3e7` — end-to-end hooks + sync snapshot tests.
 - [x] Commit `00c7385` — Hooks tab UI, bun tests, CI, docs. Pushed; CI run
   35146682025 green (frontend + rust).
+- [x] Shipped in v0.2.0 (2026-09-17).
 - [ ] Not yet exercised by the user in the real app (edit/disable flows were
   verified by tests against a scratch home, not on live settings files).
 

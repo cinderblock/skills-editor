@@ -106,7 +106,7 @@ project, what actually loads at session start and roughly what it costs.
    35187199501 green. Before pushing, a home-folder path in this plan's
    encoding example was replaced with `C:\Users\me\…` and folded into the
    unpushed commit that introduced it (verified: 0 hits, diff = 2 lines).
-7. [ ] Not released yet — needs a version bump + tag when the user wants it.
+7. [x] Shipped in v0.2.0 (2026-09-17).
 
 ## Findings / gotchas
 

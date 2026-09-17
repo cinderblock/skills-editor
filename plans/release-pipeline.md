@@ -67,9 +67,17 @@ tag-triggered release workflow that builds a signed Windows installer, and wire
    returns 200; all three signatures carry key ID C272163F9A7064F4, the
    same key as the pubkey in tauri.conf.json.
    https://github.com/cinderblock/skills-editor/releases/tag/v0.1.0
-10. [ ] ← current. Real end-to-end update test needs the NEXT release
-   (v0.1.1): an installed v0.1.0 should show the banner and install +
-   restart. Not tested yet — v0.1.0 hasn't been installed from the release.
+10. [x] v0.2.0 released 2026-09-17 (Hooks, Config, Memory tabs + fixes):
+   version bumped in all three files, CI green (35256653181), tag pushed,
+   release run 35257047290 green. Verified: public release with NSIS + MSI
+   installers and `.sig` files, `latest.json` serves 0.2.0 for all three
+   windows targets, installer URL 200, all signatures carry key ID
+   C272163F9A7064F4 (matches tauri.conf.json). Release notes written by
+   hand with `gh release edit` — the workflow only sets a one-line body.
+   https://github.com/cinderblock/skills-editor/releases/tag/v0.2.0
+11. [ ] ← current. Self-update still untested end to end: install v0.2.0
+   from the release, then the NEXT release should show the banner and
+   install + restart.
 
 ## Findings / gotchas
 
