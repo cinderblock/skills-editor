@@ -59,10 +59,17 @@ tag-triggered release workflow that builds a signed Windows installer, and wire
 8. [x] Public repo https://github.com/cinderblock/skills-editor created
    (default branch `master`, MIT detected); secrets set; only `master`
    pushed; first CI run green (frontend + rust).
-9. [ ] ← current. Hand back: user pushes the `v0.1.0` tag; then verify the
-   release workflow, assets, and `releases/latest/download/latest.json`.
-10. [ ] Real end-to-end update test needs the NEXT release (v0.1.1): an
-   installed v0.1.0 should show the banner and install + restart.
+9. [x] v0.1.0 published 2026-09-16 on the user's go-ahead: annotated tag
+   on `23c15c2` (includes the Hooks tab), release run 35169605447 green.
+   Verified: release is public (not draft/prerelease) with NSIS + MSI
+   installers and `.sig` files; `releases/latest/download/latest.json`
+   serves version 0.1.0 for windows-x86_64 / -nsis / -msi; installer URL
+   returns 200; all three signatures carry key ID C272163F9A7064F4, the
+   same key as the pubkey in tauri.conf.json.
+   https://github.com/cinderblock/skills-editor/releases/tag/v0.1.0
+10. [ ] ← current. Real end-to-end update test needs the NEXT release
+   (v0.1.1): an installed v0.1.0 should show the banner and install +
+   restart. Not tested yet — v0.1.0 hasn't been installed from the release.
 
 ## Findings / gotchas
 
