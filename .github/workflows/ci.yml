@@ -23,11 +23,15 @@ jobs:
       matrix:
         platform: [windows-latest, macos-latest, ubuntu-22.04]
     runs-on: ${{ matrix.platform }}
+    # A hosted runner that dies silently otherwise burns 48 minutes first.
+    timeout-minutes: 40
     env:
       # Tests don't need debug info, and linking ~440 crates with it was
       # enough to starve the Linux runner until it dropped off the network.
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_PROFILE_TEST_DEBUG: "0"
+      # Four parallel rustc processes peak higher than a 16 GB runner likes.
+      CARGO_BUILD_JOBS: "2"
     steps:
       - uses: actions/checkout@v4
 
@@ -48,4 +52,8 @@ jobs:
       # dist directory must exist even for `cargo test`.
       - run: bun install --frozen-lockfile
       - run: bun run build
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      # Split so a failure says whether it was the build or the tests.
+      - name: Compile tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --no-run
+      - name: Run tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml -- --nocapture
