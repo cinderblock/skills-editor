@@ -1,5 +1,10 @@
 # Instructions & memory support (CLAUDE.md et al.)
 
+## Status
+
+The tab this plan built is now the **Config** tab; auto memory moved to
+its own Memory tab (`plans/memory.md`).
+
 ## Goal
 
 A third sidebar view ("Memory", named after Claude Code's `/memory`) that finds
