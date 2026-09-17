@@ -1,6 +1,6 @@
 [package]
 name = "skills-editor"
-version = "0.2.0"
+version = "0.3.0"
 description = "A small IDE for managing AI agent skills, hooks, instructions, and memory"
 authors = ["Cameron Tacklind"]
 license = "MIT"
