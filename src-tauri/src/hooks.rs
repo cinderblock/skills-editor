@@ -1385,13 +1385,15 @@ fn kill_tree(child: &mut std::process::Child) {
             .stderr(Stdio::null());
         let _ = hide_console(&mut tk).status();
     }
-    // The child leads its own process group (see run_test), so a negative PID
-    // signals the whole group.
+    // Kill the child's own children by parent PID. Never signal a process
+    // GROUP here (`kill -- -PID`): if the child isn't the group leader we
+    // would be signalling whoever owns that group — on a CI runner, that
+    // took down the agent itself.
     #[cfg(unix)]
     {
-        let mut kill = Command::new("kill");
-        let _ = kill
-            .args(["-KILL", &format!("-{}", child.id())])
+        let mut pkill = Command::new("pkill");
+        let _ = pkill
+            .args(["-KILL", "-P", &child.id().to_string()])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
