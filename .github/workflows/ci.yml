@@ -23,6 +23,11 @@ jobs:
       matrix:
         platform: [windows-latest, macos-latest, ubuntu-22.04]
     runs-on: ${{ matrix.platform }}
+    env:
+      # Tests don't need debug info, and linking ~440 crates with it was
+      # enough to starve the Linux runner until it dropped off the network.
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
 

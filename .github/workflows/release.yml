@@ -31,6 +31,11 @@ jobs:
           - platform: ubuntu-22.04
             args: ""
     runs-on: ${{ matrix.platform }}
+    env:
+      # The test build runs before the release build; it doesn't need debug
+      # info, which linking-wise is what starves a hosted runner.
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
 
