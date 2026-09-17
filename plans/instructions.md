@@ -80,18 +80,41 @@ project, what actually loads at session start and roughly what it costs.
 
 ## Plan / steps
 
-1. [x] Research + design. ← done
-2. [ ] Backend `instructions.rs`: discovery, encoding, imports, excludes,
-   rules frontmatter, load-order + sizes, other agents, bounded nested scan.
-3. [ ] Backend ops: create (+ .gitignore), delete, autoMemoryEnabled toggle;
-   file-guard + sync integration; unit tests with the fake home.
-4. [ ] Frontend: Memory tab, sidebar, info strip in EditorPane, startup
-   context view, create dialog, toggle.
-5. [ ] Verify in the running app; checks; README; commit; push; CI.
+1. [x] Research + design.
+2. [x] Backend `instructions.rs`: discovery, encoding, imports, excludes,
+   rules frontmatter, load-order + sizes, other agents, bounded nested scan
+   (parallel, cached 120 s; Refresh forces).
+3. [x] Backend ops: create (+ .gitignore), delete, autoMemoryEnabled toggle;
+   file-guard (`files::check_allowed` now takes a write flag; managed is
+   read-only) + sync (`instructions/`, `memory/`); tests: 8 unit + 1
+   end-to-end against the fake home + sync mapping test (31 Rust total).
+4. [x] Frontend: Memory tab (filter box, folded auto-memory sections),
+   `InstructionInfo` strip in EditorPane, `StartupContext` view with the
+   auto-memory switch, `NewInstructionDialog`; `instructionsModel.ts` with
+   6 bun tests (20 frontend total).
+5. [x] Verified in the running dev app against real files (screenshots):
+   user CLAUDE.md shows the 257-line warning; t3code's startup context lists
+   `@AGENTS.md` nested under its CLAUDE.md; AGENTS.md marked "imported";
+   New-file dialog defaults sensibly. Nothing was created, deleted, or
+   toggled on real files.
+6. [ ] README ✓, commit, push, CI. ← current
 
 ## Findings / gotchas
 
-(none yet)
+- Live scan of this machine: 57 registered projects, ~5.8 s cold (the
+  nested walk dominates) → cached per project for 120 s; focus refreshes
+  reuse the cache, the Refresh button forces.
+- 75 auto-memory folders exist but most belong to old t3 worktrees that
+  aren't registered projects → "Other auto memory" group, collapsed.
+- `~/.claude.json` registers the home folder as a project; its `.claude`
+  files are the user files (deduped) and nesting isn't scanned there. The
+  group is labelled "Home folder (~)" and holds its auto memory.
+- A registered project can live under `~/.claude` (e.g. a skill folder),
+  so "is this a nested rules file" must use the path *inside* the project.
+- Real `t3code/CLAUDE.md` is just `@AGENTS.md` — the import bridge the docs
+  recommend works as modelled (AGENTS.md shown as loaded via import).
+- The agent badge "AGENTS.md (Codex, others)" squeezed the file name to
+  "AG…" — shortened to "Codex etc.".
 
 ## Progress log
 

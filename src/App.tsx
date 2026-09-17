@@ -1,6 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
-import { aiListJobs, deleteSkill, discoverSkills, hooksOverview, setSkillEnabled } from "./api";
+import {
+  aiListJobs,
+  deleteSkill,
+  discoverSkills,
+  hooksOverview,
+  instructionsDelete,
+  instructionsOverview,
+  setSkillEnabled,
+} from "./api";
+import InstructionInfo from "./components/InstructionInfo";
+import InstructionsSidebar from "./components/InstructionsSidebar";
+import NewInstructionDialog from "./components/NewInstructionDialog";
+import StartupContext from "./components/StartupContext";
+import { findFile } from "./instructionsModel";
 import AiTaskDialog, { type AiTarget } from "./components/AiTaskDialog";
 import EditorPane, { type EditorPaneHandle } from "./components/EditorPane";
 import HookEditor, { type HookEditorHandle } from "./components/HookEditor";
@@ -16,6 +29,10 @@ import type {
   HookGroup,
   HookSelection,
   HooksOverview,
+  InstrFile,
+  InstrGroup,
+  InstrOverview,
+  InstrSelection,
   JobInfo,
   OpenFile,
   Skill,
@@ -28,20 +45,31 @@ interface Confirm {
   actions: { label: string; kind?: "accent" | "danger"; run: () => void }[];
 }
 
-type View = "skills" | "hooks";
+type View = "skills" | "hooks" | "memory";
 
-/** A stand-in skill so hook scripts can use the file editor (and AI edits). */
-function scriptFile(path: string, editable: boolean, group: HookGroup | null): OpenFile {
+const VIEW_LABEL: Record<View, string> = { skills: "Skills", hooks: "Hooks", memory: "Memory" };
+
+/**
+ * A stand-in skill so hook scripts and instruction files can use the file
+ * editor (and AI selection edits, which run in the file's folder).
+ */
+function standInFile(
+  path: string,
+  editable: boolean,
+  kind: "script" | "instruction",
+  group: { key: string; label: string; detail: string } | null,
+  name?: string,
+): OpenFile {
   const sep = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
   const dir = path.slice(0, sep);
-  const name = path.slice(sep + 1);
+  const base = path.slice(sep + 1);
   const skill: Skill = {
     id: path,
-    name,
+    name: name ?? base,
     description: "",
     dir,
     skill_md: "",
-    files: [name],
+    files: [base],
     single_file: true,
     editable,
     disabled: false,
@@ -49,15 +77,19 @@ function scriptFile(path: string, editable: boolean, group: HookGroup | null): O
   return {
     path,
     skill,
-    kind: "script",
+    kind,
     group: {
-      key: `hooks:${group?.key ?? dir}`,
+      key: `${kind}:${group?.key ?? dir}`,
       kind: "extra",
-      label: group?.label ?? "hooks",
+      label: group?.label ?? (kind === "script" ? "hooks" : "instructions"),
       detail: group?.detail ?? dir,
       skills: [],
     },
   };
+}
+
+function instructionFile(group: InstrGroup, file: InstrFile): OpenFile {
+  return standInFile(file.path, file.editable, "instruction", group, file.memory?.name ?? file.label);
 }
 
 export default function App() {
@@ -68,8 +100,13 @@ export default function App() {
   const [hooksError, setHooksError] = useState<string | null>(null);
   const [file, setFile] = useState<OpenFile | null>(null);
   const [hookSel, setHookSel] = useState<HookSelection | null>(null);
+  const [instr, setInstr] = useState<InstrOverview | null>(null);
+  const [instrError, setInstrError] = useState<string | null>(null);
+  const [instrLoading, setInstrLoading] = useState(false);
+  const [instrSel, setInstrSel] = useState<InstrSelection | null>(null);
+  const [showNewInstr, setShowNewInstr] = useState(false);
   /** Which editor owns the main pane. */
-  const [main, setMain] = useState<"file" | "hook">("file");
+  const [main, setMain] = useState<"file" | "hook" | "startup">("file");
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState("");
   const [jobs, setJobs] = useState<JobInfo[]>([]);
@@ -123,16 +160,41 @@ export default function App() {
     }
   }, []);
 
-  const refreshAll = useCallback(() => {
-    void refresh();
-    void refreshHooks();
-  }, [refresh, refreshHooks]);
+  const instrRequest = useRef(0);
+  const refreshInstr = useCallback(async (force: boolean): Promise<InstrOverview | null> => {
+    // The scan can take seconds; only the newest request may update state.
+    const id = ++instrRequest.current;
+    setInstrLoading(true);
+    try {
+      const ov = await instructionsOverview(force);
+      if (id === instrRequest.current) {
+        setInstr(ov);
+        setInstrError(null);
+      }
+      return ov;
+    } catch (e) {
+      if (id === instrRequest.current) setInstrError(String(e));
+      return null;
+    } finally {
+      if (id === instrRequest.current) setInstrLoading(false);
+    }
+  }, []);
+
+  const refreshAll = useCallback(
+    (force = false) => {
+      void refresh();
+      void refreshHooks();
+      void refreshInstr(force);
+    },
+    [refresh, refreshHooks, refreshInstr],
+  );
 
   useEffect(() => {
-    refreshAll();
+    const onFocus = () => refreshAll(false);
+    refreshAll(false);
     // Claude Code and other tools edit these files too — rescan on focus.
-    window.addEventListener("focus", refreshAll);
-    return () => window.removeEventListener("focus", refreshAll);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, [refreshAll]);
 
   // Poll AI jobs; when one finishes, reload the editor and rescan.
@@ -220,8 +282,44 @@ export default function App() {
 
   const openScript = useCallback(
     (path: string, editable: boolean, group: HookGroup | null) =>
-      openFile(scriptFile(path, editable, group)),
+      openFile(standInFile(path, editable, "script", group)),
     [openFile],
+  );
+
+  const selectInstr = useCallback(
+    (sel: InstrSelection) => {
+      if (sel.kind === "startup") {
+        guard(() => {
+          setInstrSel(sel);
+          setMain("startup");
+        });
+        return;
+      }
+      const hit = findFile(instr, sel.path);
+      guard(() => {
+        setInstrSel(sel);
+        // Imported files aren't listed themselves; they still open (the
+        // backend admits resolved imports).
+        setFile(hit ? instructionFile(hit.group, hit.file) : standInFile(sel.path, true, "instruction", null));
+        setMain("file");
+      });
+    },
+    [guard, instr],
+  );
+
+  const deleteInstr = useCallback(
+    (f: InstrFile) => {
+      void instructionsDelete(f.path)
+        .then(() => {
+          say(`Deleted ${f.label}`);
+          setDirty(false);
+          setFile((cur) => (cur?.path === f.path ? null : cur));
+          setInstrSel(null);
+          return refreshInstr(false);
+        })
+        .catch((e) => say(String(e)));
+    },
+    [refreshInstr, say],
   );
 
   const requestDelete = useCallback(
@@ -276,6 +374,16 @@ export default function App() {
     [refresh, openFile],
   );
 
+  const startupGroup =
+    instrSel?.kind === "startup" ? instr?.groups.find((g) => g.key === instrSel.group) ?? null : null;
+  const openInstr = main === "file" && file?.kind === "instruction" ? findFile(instr, file.path) : null;
+  const newInstrProject =
+    instrSel?.kind === "startup"
+      ? startupGroup?.project_dir ?? null
+      : openInstr?.group.kind === "project"
+        ? openInstr.group.project_dir
+        : null;
+
   const running = jobs.filter((j) => j.status === "running").length;
   const unsafeToRestart =
     [
@@ -299,7 +407,7 @@ export default function App() {
           <button
             className="btn"
             onClick={() =>
-              setAiTarget({ mode: "skills", file: file && file.kind !== "script" ? file : undefined })
+              setAiTarget({ mode: "skills", file: file && (file.kind ?? "skill") === "skill" ? file : undefined })
             }
           >
             AI task
@@ -310,7 +418,7 @@ export default function App() {
           <button className="btn" onClick={() => setShowSettings(true)}>
             Settings
           </button>
-          <button className="btn" onClick={refreshAll}>
+          <button className="btn" onClick={() => refreshAll(true)}>
             Refresh
           </button>
         </div>
@@ -322,13 +430,13 @@ export default function App() {
       <div className="main">
         <div className="sidebar-shell">
           <div className="sidebar-tabs">
-            {(["skills", "hooks"] as View[]).map((v) => (
+            {(Object.keys(VIEW_LABEL) as View[]).map((v) => (
               <button
                 key={v}
                 className={`sidebar-tab${view === v ? " active" : ""}`}
                 onClick={() => setView(v)}
               >
-                {v === "skills" ? "Skills" : "Hooks"}
+                {VIEW_LABEL[v]}
               </button>
             ))}
           </div>
@@ -344,6 +452,17 @@ export default function App() {
                 onOpen={openFile}
               />
             )
+          ) : view === "memory" ? (
+            <InstructionsSidebar
+              overview={instr}
+              error={instrError}
+              loading={instrLoading}
+              selection={
+                main === "startup" ? instrSel : main === "file" && file ? { kind: "file", path: file.path } : null
+              }
+              onSelect={selectInstr}
+              onNew={() => setShowNewInstr(true)}
+            />
           ) : (
             <HooksSidebar
               overview={hooks}
@@ -375,6 +494,13 @@ export default function App() {
             onDirtyChange={setDirty}
             onOpenScript={openScript}
           />
+        ) : main === "startup" && startupGroup ? (
+          <StartupContext
+            group={startupGroup}
+            onOpenPath={(path) => selectInstr({ kind: "file", path })}
+            onStatus={say}
+            onChanged={() => void refreshInstr(false)}
+          />
         ) : (
           <EditorPane
             ref={editorRef}
@@ -386,6 +512,19 @@ export default function App() {
             onToggleDisabled={toggleDisabled}
             onAiSelection={(f, selection) =>
               setAiTarget({ mode: "selection", file: f, selection })
+            }
+            onSaved={(f) => {
+              if (f.kind === "instruction") void refreshInstr(false);
+            }}
+            info={
+              openInstr && (
+                <InstructionInfo
+                  group={openInstr.group}
+                  file={openInstr.file}
+                  onOpenPath={(path) => selectInstr({ kind: "file", path })}
+                  onDelete={deleteInstr}
+                />
+              )
             }
           />
         )}
@@ -411,6 +550,24 @@ export default function App() {
           onSaved={() => {
             say("Settings saved");
             refreshAll();
+          }}
+        />
+      )}
+      {showNewInstr && instr && (
+        <NewInstructionDialog
+          overview={instr}
+          initialProject={newInstrProject}
+          onClose={() => setShowNewInstr(false)}
+          onCreated={(path, note) => {
+            say(note ? `Created — ${note}` : "Created");
+            void refreshInstr(false).then((ov) => {
+              const hit = findFile(ov, path);
+              guard(() => {
+                setInstrSel({ kind: "file", path });
+                setFile(hit ? instructionFile(hit.group, hit.file) : standInFile(path, true, "instruction", null));
+                setMain("file");
+              });
+            });
           }}
         />
       )}

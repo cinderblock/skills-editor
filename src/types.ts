@@ -63,9 +63,87 @@ export interface OpenFile {
    */
   skill: Skill;
   group: SkillGroup;
-  /** Defaults to "skill". Scripts hide skill-only actions. */
-  kind?: "skill" | "script";
+  /** Defaults to "skill". Scripts and instruction files hide skill-only actions. */
+  kind?: "skill" | "script" | "instruction";
 }
+
+// ---- instructions & memory ----
+
+export type InstrFileKind =
+  | "claude"
+  | "local"
+  | "rule"
+  | "nested"
+  | "memory-index"
+  | "memory-topic"
+  | "other-agent";
+
+export type InstrLoads = "startup" | "on-demand" | "imported" | "never";
+
+export interface InstrImport {
+  raw: string;
+  path: string;
+  exists: boolean;
+  external: boolean;
+}
+
+export interface InstrFile {
+  path: string;
+  label: string;
+  kind: InstrFileKind;
+  loads: InstrLoads;
+  editable: boolean;
+  bytes: number;
+  lines: number;
+  excluded: boolean;
+  paths: string[];
+  agent: string | null;
+  imported_by: string[];
+  applies_to: string[];
+  imports: InstrImport[];
+  memory: { name: string | null; description: string | null; kind: string | null } | null;
+  warnings: string[];
+}
+
+export interface StartupEntry {
+  path: string;
+  label: string;
+  depth: number;
+  bytes: number;
+  loaded_bytes: number;
+  lines: number;
+  note: string | null;
+}
+
+export interface AutoMemoryState {
+  dir: string;
+  exists: boolean;
+  enabled: boolean;
+  source: string;
+  custom_dir: boolean;
+}
+
+export interface InstrGroup {
+  key: string;
+  kind: "managed" | "user" | "project" | "parents" | "memory-other";
+  label: string;
+  detail: string;
+  project_dir: string | null;
+  files: InstrFile[];
+  startup: StartupEntry[];
+  auto_memory: AutoMemoryState | null;
+  notes: string[];
+}
+
+export interface InstrOverview {
+  groups: InstrGroup[];
+  projects: { dir: string; label: string }[];
+}
+
+/** What the Memory view's main pane shows. */
+export type InstrSelection =
+  | { kind: "file"; path: string }
+  | { kind: "startup"; group: string };
 
 // ---- hooks ----
 

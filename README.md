@@ -1,8 +1,9 @@
 # Skills Editor
 
-A small desktop IDE for managing AI agent skills and hooks — discovering,
-editing, installing, enabling/disabling, testing, AI-assisted rewriting, and
-sharing them between machines. Built with Tauri v2, React, TypeScript, and Bun.
+A small desktop IDE for managing AI agent skills, hooks, and instructions
+(CLAUDE.md, rules, auto memory) — discovering, editing, installing,
+enabling/disabling, testing, AI-assisted rewriting, and sharing them between
+machines. Built with Tauri v2, React, TypeScript, and Bun.
 Claude Code's formats are supported first; the discovery layer is designed to
 grow to other agents.
 
@@ -86,12 +87,39 @@ Requires `git` on `PATH` (sync and catalog installs) and the
     input, using Git Bash or PowerShell like Claude Code does. It shows the
     exit code, stdout/stderr, and how Claude Code would read the result
     (allow, block, JSON decision, non-blocking error, timeout).
-- **Tracks skill and hook evolution in a git repo** (default
+- **Manages instructions and memory** (the **Memory** tab):
+  - Finds every file Claude Code reads as instructions:
+    - managed policy (`CLAUDE.md` and `claudeMd`), `~/.claude/CLAUDE.md` and
+      `~/.claude/rules/`;
+    - each project's `CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md` and
+      `.claude/rules/`;
+    - `CLAUDE.md` files in parent folders, and in subfolders (these load on
+      demand);
+    - auto memory: the `MEMORY.md` index plus its topic files.
+  - Also lists other agents' files: `AGENTS.md`, `GEMINI.md`, Copilot,
+    Cursor, Windsurf and Cline. They're marked as loaded when a `CLAUDE.md`
+    `@import`s them.
+  - Each file shows when it loads: at startup, on demand (subfolders and
+    rules with `paths:`), through an import, or never. Files excluded by
+    `claudeMdExcludes`, broken or out-of-project `@imports`, a `MEMORY.md`
+    past its 200-line / 25 KB load limit, and over-long files are all
+    flagged.
+  - **Startup context** lists, per project, what a new session reads before
+    your first message, in load order, with sizes and a rough token count.
+  - Create the standard files (optionally adding `CLAUDE.local.md` to
+    `.gitignore`), edit them in the same editor as skills (AI selection
+    edits included), delete them, and turn auto memory on or off globally
+    or per project.
+  - Scanning subfolders respects `.gitignore`, is bounded, and skips your
+    home folder. Results are cached for two minutes; **Refresh** rescans.
+- **Tracks skill, hook, and instruction evolution in a git repo** (default
   `~/.claude-skills-repo`):
   - One branch per host, with snapshot commits of all user/project/extra
     skills.
   - Each settings file's hook config and the scripts it runs go under
     `hooks/`, and hooks disabled from the app are included too.
+  - Instruction files go under `instructions/` and auto memory under
+    `memory/`.
   - A `manifest.json` maps repo paths back to their sources.
   - Push/pull against a shared remote to move skills between machines, and
     cherry-pick between host branches. Pulls are fast-forward only and
@@ -142,12 +170,17 @@ manual check in Settings still works.
   - `frontmatter.ts` — YAML round-tripping
   - `hooksModel.ts` — hook event metadata, edit/move logic, test-result
     interpretation; unit-tested in `hooksModel.test.ts`
+  - `instructionsModel.ts` — badges, load explanations, filtering, and
+    create options for the Memory tab; unit-tested in
+    `instructionsModel.test.ts`
   - `updates.ts` — self-update
 - `src-tauri/src/` — Rust backend:
   - `discovery.rs` — skill scanning and enabled state
   - `overrides.rs` — enable/disable
   - `hooks.rs` — hook discovery, script resolution, conflict-checked edits,
     disabled-hook store, test runner
+  - `instructions.rs` — CLAUDE.md/rules/auto-memory discovery, imports,
+    excludes, startup context, create/delete, auto-memory toggle
   - `files.rs` — guarded read/write/create/delete
   - `sync.rs` — tracking repo
   - `install.rs` — catalog installs

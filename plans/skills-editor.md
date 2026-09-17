@@ -68,6 +68,8 @@ repo so they can be shared between hosts (per-host branches, cherry-pick friendl
 10. [x] Publish + self-update — tracked in `plans/release-pipeline.md`
        (v0.1.0 tag still to be pushed by the user).
 11. [x] Hooks support (Hooks tab) — tracked in `plans/hooks.md`.
+12. [x] Instructions & memory (Memory tab: CLAUDE.md, rules, imports, auto
+       memory, other agents' files) — tracked in `plans/instructions.md`.
 
 ## Findings / gotchas
 

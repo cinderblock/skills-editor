@@ -5,6 +5,7 @@ import {
   useImperativeHandle,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import CodeMirror, { EditorView, keymap } from "@uiw/react-codemirror";
 import type { Extension } from "@codemirror/state";
@@ -88,10 +89,18 @@ interface Props {
   onDeleteSkill: (skill: Skill) => void;
   onToggleDisabled: (skill: Skill) => void;
   onAiSelection: (file: OpenFile, selection: string) => void;
+  /** Extra details shown under the path (instruction files). */
+  info?: ReactNode;
+  onSaved?: (file: OpenFile) => void;
 }
 
+const KIND_TITLE: Record<string, string> = {
+  script: "Hook script",
+  instruction: "Instructions",
+};
+
 const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
-  { file, reloadToken, onStatus, onDirtyChange, onDeleteSkill, onToggleDisabled, onAiSelection },
+  { file, reloadToken, onStatus, onDirtyChange, onDeleteSkill, onToggleDisabled, onAiSelection, info, onSaved },
   ref,
 ) {
   const [diskContent, setDiskContent] = useState<string | null>(null);
@@ -169,7 +178,7 @@ const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
     const f = fileRef.current;
     if (!f) return;
     if (!f.skill.editable) {
-      onStatus(f.kind === "script" ? "This script is read-only" : "This skill is read-only (plugin cache)");
+      onStatus(f.kind && f.kind !== "skill" ? "This file is read-only" : "This skill is read-only (plugin cache)");
       return;
     }
     try {
@@ -177,11 +186,12 @@ const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
       setDiskContent(textRef.current);
       setExternalChange(false);
       onStatus("Saved");
+      onSaved?.(f);
     } catch (e) {
       onStatus(`Save failed: ${e}`);
       throw e;
     }
-  }, [onStatus]);
+  }, [onStatus, onSaved]);
 
   useImperativeHandle(ref, () => ({
     save,
@@ -243,8 +253,8 @@ const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
   const fields = readFields(frontmatter);
   const structured = isSkillMd && !rawMode && frontmatter !== null;
   const readOnly = !file.skill.editable;
-  const isScript = file.kind === "script";
-  const skillActions = !readOnly && !isScript;
+  const standIn = !!file.kind && file.kind !== "skill";
+  const skillActions = !readOnly && !standIn;
   const relPath = file.path.startsWith(file.skill.dir)
     ? file.path.slice(file.skill.dir.length + 1)
     : file.path;
@@ -253,9 +263,9 @@ const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
     <div className="editor-pane">
       <div className="editor-header">
         <div className="editor-title">
-          <span className="editor-skill">{isScript ? "Hook script" : file.skill.name}</span>
-          <span className="editor-file">{relPath}</span>
-          {isScript && <span className="badge">{file.group.label}</span>}
+          <span className="editor-skill">{standIn ? KIND_TITLE[file.kind!] : file.skill.name}</span>
+          <span className="editor-file">{file.kind === "instruction" ? file.skill.name : relPath}</span>
+          {standIn && <span className="badge">{file.group.label}</span>}
           {dirty && <span className="dot-dirty">●</span>}
           {file.skill.disabled && <span className="badge disabled">disabled</span>}
           {readOnly && <span className="badge readonly">read-only</span>}
@@ -292,6 +302,7 @@ const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
         </div>
       </div>
       <div className="editor-path">{file.path}</div>
+      {info}
 
       {externalChange && (
         <div className="banner warn">

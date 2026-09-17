@@ -3,6 +3,7 @@ import type {
   HookTestRequest,
   HookTestResult,
   HooksOverview,
+  InstrOverview,
   JobInfo,
   Settings,
   SkillGroup,
@@ -62,6 +63,27 @@ export const hooksDeleteParked = (id: string) => invoke<void>("hooks_delete_park
 
 export const hooksTest = (request: HookTestRequest) =>
   invoke<HookTestResult>("hooks_test", { request });
+
+// ---- instructions & memory ----
+
+/** `force` rescans nested CLAUDE.md files instead of reusing recent results. */
+export const instructionsOverview = (force: boolean) =>
+  invoke<InstrOverview>("instructions_overview", { force });
+
+export type InstrCreateKind = "claude" | "dot-claude" | "local" | "rule" | "agents" | "gemini";
+
+export const instructionsCreate = (args: {
+  project: string | null;
+  kind: InstrCreateKind;
+  name: string | null;
+  paths: string[];
+  gitignore: boolean;
+}) => invoke<{ path: string; note: string | null }>("instructions_create", args);
+
+export const instructionsDelete = (path: string) => invoke<void>("instructions_delete", { path });
+
+export const instructionsSetAutoMemory = (project: string | null, enabled: boolean) =>
+  invoke<string>("instructions_set_auto_memory", { project, enabled });
 
 /** Backend errors for stale writes start with this marker. */
 export const isConflict = (e: unknown) => String(e).includes("CONFLICT:");

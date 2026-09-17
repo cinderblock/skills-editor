@@ -35,7 +35,7 @@ pub const CLAUDE_NAMES: [&str; 2] = ["CLAUDE.md", "CLAUDE.local.md"];
 
 /// Other agents' instruction files relative to a project: (path, agent).
 const OTHER_AGENT_FILES: [(&str, &str); 6] = [
-    ("AGENTS.md", "AGENTS.md (Codex, others)"),
+    ("AGENTS.md", "Codex etc."),
     ("GEMINI.md", "Gemini CLI"),
     (".github/copilot-instructions.md", "GitHub Copilot"),
     (".cursorrules", "Cursor"),
