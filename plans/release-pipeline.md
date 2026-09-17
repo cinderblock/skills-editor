@@ -34,8 +34,9 @@ tag-triggered release workflow that builds a signed Windows installer, and wire
 - **Windows-only release artifacts.** The frontend builds skill file paths with
   `\` separators, so macOS/Linux builds would compile but misbehave. Revisit
   when paths are made platform-neutral.
-- **Releases only from CI** (global rule). Final step handed back to the user
-  is pushing the tag — I don't push release tags.
+- **Releases only from CI** (global rule). The tag is pushed only when the
+  user explicitly asks for a release; v0.1.0 and v0.2.0 were both released
+  that way.
 - **Signing key** at `~/.tauri/skills-editor.key` (+ `.password` beside it),
   never in the repo; both stored as Actions secrets.
 
@@ -119,5 +120,5 @@ tag-triggered release workflow that builds a signed Windows installer, and wire
 - [x] History rewritten + verified (16 commits on `master` after new work).
 - [x] Updater wired, signed, secrets set.
 - [x] Published; CI green on `master` (run 35142461510).
-- [ ] v0.1.0 tag pushed by user → release workflow green → assets and
-  `latest.json` verified.
+- [x] v0.1.0 released 2026-09-16; v0.2.0 released 2026-09-17 (assets and
+  `latest.json` verified both times).
