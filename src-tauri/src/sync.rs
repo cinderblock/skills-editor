@@ -9,6 +9,7 @@ use crate::discovery::{discover, SkillGroup};
 use crate::files::remove_dir_all_robust;
 use crate::git;
 use crate::hooks::{self, HookGroup};
+use crate::instructions::{self, InstrFile, InstrGroup};
 use crate::settings::Settings;
 
 #[derive(Serialize)]
@@ -105,6 +106,9 @@ pub fn init(settings: &Settings) -> Result<String, String> {
             - `extra/<root>/<skill>/` — skills from extra configured roots\n\
             - `hooks/user/`, `hooks/projects/<project>/` — hook config from each\n  \
             settings file, plus the scripts those hooks run (`scripts/`)\n\
+            - `instructions/` — CLAUDE.md files, rules, and other agents' instruction\n  \
+            files (user, per project, and parent folders)\n\
+            - `memory/` — Claude Code auto memory, per project\n\
             - `manifest.json` — maps repo paths back to their source locations\n\n\
             Share skills between hosts by pushing to a common remote and\n\
             cherry-picking between host branches.\n";
@@ -122,7 +126,7 @@ pub fn init(settings: &Settings) -> Result<String, String> {
 struct ManifestEntry {
     repo_dir: String,
     source: String,
-    /// "skill" | "hooks" | "hook-script" | "disabled-hooks"
+    /// "skill" | "hooks" | "hook-script" | "disabled-hooks" | "instructions" | "memory"
     kind: &'static str,
     /// Display name (the skill name for skills; kept for older readers).
     skill: String,
@@ -267,6 +271,79 @@ fn snapshot_hooks(
     Ok(written)
 }
 
+/// Where an instruction/memory file goes in the repo, if it's snapshotted.
+///
+/// - `instructions/user/…`, `instructions/projects/<project>/…`
+/// - `instructions/parents/<encoded folder>/CLAUDE.md`
+/// - `memory/projects/<project>/…`, `memory/other/<encoded>/memory/…`
+///
+/// Managed policy is the administrator's, not this machine's own config.
+fn instruction_dest(
+    repo: &Path,
+    group: &InstrGroup,
+    file: &InstrFile,
+    project_dirs: &HashMap<String, String>,
+) -> Option<PathBuf> {
+    let rel = |label: &str| -> Option<PathBuf> {
+        let p = PathBuf::from(label.replace('/', std::path::MAIN_SEPARATOR_STR));
+        // Labels are relative; never let one escape its folder.
+        p.components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+            .then_some(p)
+    };
+    match group.kind.as_str() {
+        "user" => Some(repo.join("instructions").join("user").join(rel(&file.label)?)),
+        "project" => {
+            let name = project_dirs.get(&group.key)?;
+            match file.label.strip_prefix("auto memory/") {
+                Some(rest) => Some(repo.join("memory").join("projects").join(name).join(rel(rest)?)),
+                None => Some(repo.join("instructions").join("projects").join(name).join(rel(&file.label)?)),
+            }
+        }
+        "parents" => {
+            let path = Path::new(&file.path);
+            Some(
+                repo.join("instructions")
+                    .join("parents")
+                    .join(instructions::encode_project(path.parent()?))
+                    .join(path.file_name()?),
+            )
+        }
+        "memory-other" => Some(repo.join("memory").join("other").join(rel(&file.label)?)),
+        _ => None,
+    }
+}
+
+fn snapshot_instructions(
+    repo: &Path,
+    groups: &[InstrGroup],
+    project_dirs: &HashMap<String, String>,
+    manifest: &mut Manifest,
+) -> Result<usize, String> {
+    let mut written = 0usize;
+    for group in groups {
+        for file in &group.files {
+            let Some(dst) = instruction_dest(repo, group, file, project_dirs) else { continue };
+            let src = Path::new(&file.path);
+            if !src.is_file() {
+                continue;
+            }
+            if let Some(parent) = dst.parent() {
+                fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+            }
+            fs::copy(src, &dst).map_err(|e| format!("cannot copy {}: {e}", src.display()))?;
+            written += 1;
+            manifest.entries.push(ManifestEntry {
+                repo_dir: dst.strip_prefix(repo).unwrap_or(&dst).to_string_lossy().replace('\\', "/"),
+                source: file.path.clone(),
+                kind: if file.kind.starts_with("memory") { "memory" } else { "instructions" },
+                skill: format!("{} — {}", group.label, file.label),
+            });
+        }
+    }
+    Ok(written)
+}
+
 pub fn snapshot(settings: &Settings, sidecar: &Path) -> Result<String, String> {
     let repo = settings.effective_repo_path()?;
     if !git::is_repo(&repo) {
@@ -282,6 +359,7 @@ pub fn snapshot(settings: &Settings, sidecar: &Path) -> Result<String, String> {
 
     let groups: Vec<SkillGroup> = discover(settings)?;
     let hook_groups = hooks::overview(settings, None)?.groups;
+    let instr_groups = instructions::overview(true)?.groups;
     let mut manifest = Manifest {
         hostname: host.clone(),
         generated_at_epoch_secs: SystemTime::now()
@@ -292,7 +370,7 @@ pub fn snapshot(settings: &Settings, sidecar: &Path) -> Result<String, String> {
     };
 
     // Rebuild the snapshot dirs from scratch so deletions propagate.
-    for sub in ["user", "projects", "extra", "hooks"] {
+    for sub in ["user", "projects", "extra", "hooks", "instructions", "memory"] {
         remove_dir_all_robust(&repo.join(sub))?;
     }
 
@@ -304,7 +382,8 @@ pub fn snapshot(settings: &Settings, sidecar: &Path) -> Result<String, String> {
         .iter()
         .filter(|g| g.kind == "project")
         .map(|g| (&g.key, &g.label))
-        .chain(hook_groups.iter().filter(|g| g.kind == "project").map(|g| (&g.key, &g.label)));
+        .chain(hook_groups.iter().filter(|g| g.kind == "project").map(|g| (&g.key, &g.label)))
+        .chain(instr_groups.iter().filter(|g| g.kind == "project").map(|g| (&g.key, &g.label)));
     for (key, label) in project_groups {
         if !project_dirs.contains_key(key) {
             project_dirs.insert(key.clone(), unique_label(label, &mut project_labels));
@@ -349,6 +428,7 @@ pub fn snapshot(settings: &Settings, sidecar: &Path) -> Result<String, String> {
     }
 
     let hook_count = snapshot_hooks(&repo, &hook_groups, &project_dirs, sidecar, &mut manifest)?;
+    let instr_count = snapshot_instructions(&repo, &instr_groups, &project_dirs, &mut manifest)?;
 
     let manifest_text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
     fs::write(repo.join("manifest.json"), manifest_text)
@@ -361,7 +441,7 @@ pub fn snapshot(settings: &Settings, sidecar: &Path) -> Result<String, String> {
     }
     let changed = porcelain.lines().count();
     let msg = format!(
-        "Snapshot from {host}: {skill_count} skills, {hook_count} hook files, {changed} files changed"
+        "Snapshot from {host}: {skill_count} skills, {hook_count} hook files, {instr_count} instruction/memory files, {changed} files changed"
     );
     git::run(&repo, &["commit", "-m", &msg])?;
     let summary = git::run(&repo, &["log", "-1", "--format=%h %s"])?;
@@ -413,6 +493,62 @@ pub fn pull(settings: &Settings) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn instr_file(label: &str, path: &str, kind: &str) -> InstrFile {
+        InstrFile {
+            path: path.into(),
+            label: label.into(),
+            kind: kind.into(),
+            loads: "startup".into(),
+            editable: true,
+            bytes: 0,
+            lines: 0,
+            excluded: false,
+            paths: vec![],
+            agent: None,
+            imported_by: vec![],
+            applies_to: vec![],
+            imports: vec![],
+            memory: None,
+            warnings: vec![],
+        }
+    }
+
+    fn instr_group(kind: &str, key: &str) -> InstrGroup {
+        InstrGroup {
+            key: key.into(),
+            kind: kind.into(),
+            label: "g".into(),
+            detail: String::new(),
+            project_dir: None,
+            files: vec![],
+            startup: vec![],
+            auto_memory: None,
+            notes: vec![],
+        }
+    }
+
+    #[test]
+    fn instruction_files_map_into_the_repo_and_cannot_escape() {
+        let repo = Path::new("/repo");
+        let dirs: HashMap<String, String> = [("project:/w/app".to_string(), "app".to_string())].into();
+        let project = instr_group("project", "project:/w/app");
+        let dest = |g: &InstrGroup, label: &str, path: &str| {
+            instruction_dest(repo, g, &instr_file(label, path, "claude"), &dirs)
+                .map(|p| p.to_string_lossy().replace('\\', "/"))
+        };
+        assert_eq!(dest(&project, ".claude/rules/a.md", "x").as_deref(), Some("/repo/instructions/projects/app/.claude/rules/a.md"));
+        assert_eq!(dest(&project, "auto memory/MEMORY.md", "x").as_deref(), Some("/repo/memory/projects/app/MEMORY.md"));
+        assert_eq!(dest(&instr_group("user", "user"), "rules/x.md", "x").as_deref(), Some("/repo/instructions/user/rules/x.md"));
+        assert_eq!(
+            dest(&instr_group("parents", "parents"), "/w/CLAUDE.md", "/w/CLAUDE.md").as_deref(),
+            Some("/repo/instructions/parents/-w/CLAUDE.md")
+        );
+        assert_eq!(dest(&instr_group("memory-other", "m"), "C--x/memory/MEMORY.md", "x").as_deref(), Some("/repo/memory/other/C--x/memory/MEMORY.md"));
+        assert_eq!(dest(&project, "../escape.md", "x"), None);
+        assert_eq!(dest(&instr_group("project", "project:/unknown"), "CLAUDE.md", "x"), None);
+        assert_eq!(dest(&instr_group("managed", "managed"), "CLAUDE.md", "x"), None);
+    }
 
     #[test]
     fn hook_snapshot_writes_config_scripts_and_parked_hooks() {

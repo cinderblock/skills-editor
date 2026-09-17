@@ -6,23 +6,28 @@ use crate::paths::is_within;
 use crate::settings::Settings;
 
 /// Guard: the path must live inside a known skills root, a hooks/agents dir,
-/// or be a script a discovered hook runs.
-fn check_allowed(path: &Path, settings: &Settings) -> Result<(), String> {
+/// be a script a discovered hook runs, or be an instruction/memory file.
+/// `write` refuses read-only locations (managed policy).
+fn check_allowed(path: &Path, settings: &Settings, write: bool) -> Result<(), String> {
     let within = |roots: Vec<PathBuf>| roots.iter().any(|root| is_within(path, root));
-    // Skills roots are cheap to compute; hook discovery only when needed.
-    if within(allowed_roots(settings)) || within(crate::hooks::allowed_paths(settings)) {
+    // Cheapest checks first; hook discovery only when needed.
+    if within(allowed_roots(settings))
+        || crate::instructions::is_allowed(path, write)
+        || within(crate::hooks::allowed_paths(settings))
+    {
         Ok(())
     } else {
         Err(format!(
-            "{} is outside every known skills or hooks location; refusing to touch it",
-            path.display()
+            "{} is outside every known skills, hooks, or instructions location; refusing to {} it",
+            path.display(),
+            if write { "change" } else { "open" }
         ))
     }
 }
 
 pub fn read_text(path: &str, settings: &Settings) -> Result<String, String> {
     let path = PathBuf::from(path);
-    check_allowed(&path, settings)?;
+    check_allowed(&path, settings, false)?;
     fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))
 }
 
@@ -36,7 +41,7 @@ pub fn write_text(path: &str, content: &str, settings: &Settings) -> Result<(), 
             .map(|p| p.to_path_buf())
             .ok_or_else(|| "path has no parent".to_string())?
     };
-    check_allowed(&check_target, settings)?;
+    check_allowed(&check_target, settings, true)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("cannot create dir: {e}"))?;
     }
@@ -56,7 +61,7 @@ pub fn create_skill(
         return Err("skill name must be a plain directory name".into());
     }
     let root = PathBuf::from(root);
-    check_allowed(&root, settings)?;
+    check_allowed(&root, settings, true)?;
     let dir = root.join(name.trim());
     if dir.exists() {
         return Err(format!("{} already exists", dir.display()));
@@ -75,7 +80,7 @@ pub fn create_skill(
 
 pub fn delete_skill(dir: &str, settings: &Settings) -> Result<(), String> {
     let dir = PathBuf::from(dir);
-    check_allowed(&dir, settings)?;
+    check_allowed(&dir, settings, true)?;
     // Only delete things that actually look like a skill.
     if !dir.join("SKILL.md").is_file() {
         return Err(format!(

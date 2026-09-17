@@ -4,6 +4,7 @@ mod files;
 mod git;
 mod hooks;
 mod install;
+mod instructions;
 mod overrides;
 mod paths;
 mod settings;
@@ -162,6 +163,43 @@ async fn hooks_test(request: hooks::TestRequest) -> Result<hooks::TestResult, St
         .map_err(|e| format!("test runner crashed: {e}"))?
 }
 
+/// Scans every registered project, so it runs off the UI thread.
+#[tauri::command]
+async fn instructions_overview(force: bool) -> Result<instructions::InstrOverview, String> {
+    tauri::async_runtime::spawn_blocking(move || instructions::overview(force))
+        .await
+        .map_err(|e| format!("instructions scan crashed: {e}"))?
+}
+
+#[derive(serde::Serialize)]
+struct Created {
+    path: String,
+    note: Option<String>,
+}
+
+#[tauri::command]
+fn instructions_create(
+    project: Option<String>,
+    kind: String,
+    name: Option<String>,
+    paths: Vec<String>,
+    gitignore: bool,
+) -> Result<Created, String> {
+    let (path, note) =
+        instructions::create(project.as_deref(), &kind, name.as_deref(), &paths, gitignore)?;
+    Ok(Created { path, note })
+}
+
+#[tauri::command]
+fn instructions_delete(path: String) -> Result<(), String> {
+    instructions::delete(&path)
+}
+
+#[tauri::command]
+fn instructions_set_auto_memory(project: Option<String>, enabled: bool) -> Result<String, String> {
+    instructions::set_auto_memory(project.as_deref(), enabled)
+}
+
 #[tauri::command]
 fn ai_start_job(
     state: tauri::State<ai::JobState>,
@@ -223,6 +261,10 @@ pub fn run() {
             hooks_enable,
             hooks_delete_parked,
             hooks_test,
+            instructions_overview,
+            instructions_create,
+            instructions_delete,
+            instructions_set_auto_memory,
             ai_start_job,
             ai_list_jobs,
             ai_job_output,

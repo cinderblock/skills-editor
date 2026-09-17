@@ -513,7 +513,24 @@ fn display_name(path: &Path, base: Option<&Path>) -> String {
         })
 }
 
-fn managed_dir() -> PathBuf {
+/// managed-settings.json plus managed-settings.d/*.json, in merge order.
+pub(crate) fn managed_settings_files() -> Vec<PathBuf> {
+    let mdir = managed_dir();
+    let mut files = vec![mdir.join("managed-settings.json")];
+    let mut dropins: Vec<PathBuf> = fs::read_dir(mdir.join("managed-settings.d"))
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("json"))
+                .collect()
+        })
+        .unwrap_or_default();
+    dropins.sort();
+    files.extend(dropins);
+    files
+}
+
+pub(crate) fn managed_dir() -> PathBuf {
     if cfg!(windows) {
         PathBuf::from(r"C:\Program Files\ClaudeCode")
     } else if cfg!(target_os = "macos") {
@@ -824,18 +841,7 @@ pub fn overview(settings: &Settings, sidecar: Option<&Path>) -> Result<HooksOver
 
     // Managed policy (file-based only; registry-delivered policy isn't read).
     let mdir = managed_dir();
-    let mut managed_files = vec![mdir.join("managed-settings.json")];
-    let mut dropins: Vec<PathBuf> = fs::read_dir(mdir.join("managed-settings.d"))
-        .map(|rd| {
-            rd.filter_map(|e| e.ok())
-                .map(|e| e.path())
-                .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("json"))
-                .collect()
-        })
-        .unwrap_or_default();
-    dropins.sort();
-    managed_files.extend(dropins);
-    let managed_sources: Vec<HookSource> = managed_files
+    let managed_sources: Vec<HookSource> = managed_settings_files()
         .into_iter()
         .filter(|f| f.is_file())
         .map(|file| {
@@ -1011,7 +1017,7 @@ pub fn validate_hooks(hooks: &Value) -> Result<(), String> {
     }
 }
 
-fn load_object(file: &Path) -> Result<(Map<String, Value>, String), String> {
+pub(crate) fn load_object(file: &Path) -> Result<(Map<String, Value>, String), String> {
     match fs::read(file) {
         Ok(bytes) => {
             let hash = content_hash(&bytes);
@@ -1029,7 +1035,7 @@ fn load_object(file: &Path) -> Result<(Map<String, Value>, String), String> {
     }
 }
 
-fn write_object(file: &Path, obj: &Map<String, Value>) -> Result<String, String> {
+pub(crate) fn write_object(file: &Path, obj: &Map<String, Value>) -> Result<String, String> {
     if let Some(parent) = file.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
     }
