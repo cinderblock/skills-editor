@@ -97,7 +97,11 @@ project, what actually loads at session start and roughly what it costs.
    `@AGENTS.md` nested under its CLAUDE.md; AGENTS.md marked "imported";
    New-file dialog defaults sensibly. Nothing was created, deleted, or
    toggled on real files.
-6. [ ] README ✓, commit, push, CI. ← current
+6. [x] README, commits `14512fe` (backend) + `84e8887` (UI), pushed; CI run
+   35187199501 green. Before pushing, a home-folder path in this plan's
+   encoding example was replaced with `C:\Users\me\…` and folded into the
+   unpushed commit that introduced it (verified: 0 hits, diff = 2 lines).
+7. [ ] Not released yet — needs a version bump + tag when the user wants it.
 
 ## Findings / gotchas
 
