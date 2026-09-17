@@ -31,7 +31,6 @@ export function fileBadges(f: InstrFile): Badge[] {
   else if (f.loads === "never" && f.kind !== "other-agent") out.push({ text: "not loaded", tone: "danger" });
   if (f.kind === "local") out.push({ text: "local", tone: "info" });
   if (f.kind === "other-agent" && f.agent) out.push({ text: f.agent, tone: "" });
-  if (f.memory?.kind) out.push({ text: f.memory.kind, tone: "" });
   if (f.warnings.length) out.push({ text: "⚠", tone: "warn" });
   if (!f.editable) out.push({ text: "read-only", tone: "warn" });
   return out;
@@ -42,11 +41,9 @@ export function loadsText(f: InstrFile): string {
   if (f.excluded) return "Not loaded — matched by claudeMdExcludes.";
   switch (f.loads) {
     case "startup":
-      if (f.kind === "memory-index") return "Loaded at session start (first 200 lines / 25 KB).";
       return "Loaded at the start of every session in scope.";
     case "on-demand":
       if (f.paths.length) return `Loaded when Claude reads a file matching ${f.paths.join(", ")}.`;
-      if (f.kind === "memory-topic") return "Claude reads this itself when the memory index points it here.";
       return "Loaded when Claude reads files in this folder.";
     case "imported":
       return `Claude Code doesn't read this file by name, but ${f.imported_by.join(", ")} imports it, so it loads at startup.`;
@@ -57,7 +54,7 @@ export function loadsText(f: InstrFile): string {
   }
 }
 
-export type Section = "instructions" | "rules" | "nested" | "memory" | "other";
+export type Section = "instructions" | "rules" | "nested" | "other";
 
 export function sectionOf(f: InstrFile): Section {
   switch (f.kind) {
@@ -65,9 +62,6 @@ export function sectionOf(f: InstrFile): Section {
       return f.label.startsWith(".claude/rules/") || f.label.startsWith("rules/") ? "rules" : "nested";
     case "nested":
       return "nested";
-    case "memory-index":
-    case "memory-topic":
-      return "memory";
     case "other-agent":
       return "other";
     default:
@@ -79,7 +73,6 @@ export const SECTION_TITLE: Record<Section, string> = {
   instructions: "",
   rules: "rules",
   nested: "subfolders (on demand)",
-  memory: "auto memory",
   other: "other agents",
 };
 
@@ -99,7 +92,7 @@ export function filterGroups(groups: InstrGroup[], query: string): InstrGroup[] 
     .map((g) =>
       g.label.toLowerCase().includes(q)
         ? g
-        : { ...g, files: g.files.filter((f) => `${f.label} ${f.memory?.name ?? ""}`.toLowerCase().includes(q)) },
+        : { ...g, files: g.files.filter((f) => f.label.toLowerCase().includes(q)) },
     )
     .filter((g) => g.label.toLowerCase().includes(q) || g.files.length > 0);
 }

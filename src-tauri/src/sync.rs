@@ -10,6 +10,7 @@ use crate::files::remove_dir_all_robust;
 use crate::git;
 use crate::hooks::{self, HookGroup};
 use crate::instructions::{self, InstrFile, InstrGroup};
+use crate::memory;
 use crate::settings::Settings;
 
 #[derive(Serialize)]
@@ -108,7 +109,8 @@ pub fn init(settings: &Settings) -> Result<String, String> {
             settings file, plus the scripts those hooks run (`scripts/`)\n\
             - `instructions/` — CLAUDE.md files, rules, and other agents' instruction\n  \
             files (user, per project, and parent folders)\n\
-            - `memory/` — Claude Code auto memory, per project\n\
+            - `memory/` — the notes Claude writes itself: `projects/<project>/`,\n  \
+            `agents/<scope>/<agent>/`, and folders matching no project\n\
             - `manifest.json` — maps repo paths back to their source locations\n\n\
             Share skills between hosts by pushing to a common remote and\n\
             cherry-picking between host branches.\n";
@@ -275,7 +277,7 @@ fn snapshot_hooks(
 ///
 /// - `instructions/user/…`, `instructions/projects/<project>/…`
 /// - `instructions/parents/<encoded folder>/CLAUDE.md`
-/// - `memory/projects/<project>/…`, `memory/other/<encoded>/memory/…`
+/// (Memory folders are copied separately by `snapshot_memory`.)
 ///
 /// Managed policy is the administrator's, not this machine's own config.
 fn instruction_dest(
@@ -295,10 +297,7 @@ fn instruction_dest(
         "user" => Some(repo.join("instructions").join("user").join(rel(&file.label)?)),
         "project" => {
             let name = project_dirs.get(&group.key)?;
-            match file.label.strip_prefix("auto memory/") {
-                Some(rest) => Some(repo.join("memory").join("projects").join(name).join(rel(rest)?)),
-                None => Some(repo.join("instructions").join("projects").join(name).join(rel(&file.label)?)),
-            }
+            Some(repo.join("instructions").join("projects").join(name).join(rel(&file.label)?))
         }
         "parents" => {
             let path = Path::new(&file.path);
@@ -309,9 +308,54 @@ fn instruction_dest(
                     .join(path.file_name()?),
             )
         }
-        "memory-other" => Some(repo.join("memory").join("other").join(rel(&file.label)?)),
         _ => None,
     }
+}
+
+/// Copy every memory store (auto memory and subagent memory) into `memory/`.
+fn snapshot_memory(
+    repo: &Path,
+    stores: &[memory::MemoryStore],
+    manifest: &mut Manifest,
+) -> Result<usize, String> {
+    let mut written = 0usize;
+    let mut taken: Vec<String> = Vec::new();
+    for (rel, dir) in memory::snapshot_dirs(stores) {
+        // Store labels are project/agent names; keep them filesystem-safe.
+        let safe: PathBuf = rel.split('/').map(|part| unique_part(part)).collect();
+        let base = repo.join("memory").join(&safe);
+        let key = safe.to_string_lossy().to_lowercase();
+        if taken.contains(&key) {
+            continue;
+        }
+        taken.push(key);
+        for file in memory::store_files(&dir) {
+            let Ok(rest) = file.strip_prefix(&dir) else { continue };
+            let dst = base.join(rest);
+            if let Some(parent) = dst.parent() {
+                fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+            }
+            fs::copy(&file, &dst).map_err(|e| format!("cannot copy {}: {e}", file.display()))?;
+            written += 1;
+        }
+        manifest.entries.push(ManifestEntry {
+            repo_dir: base.strip_prefix(repo).unwrap_or(&base).to_string_lossy().replace('\\', "/"),
+            source: dir.to_string_lossy().to_string(),
+            kind: "memory",
+            skill: rel,
+        });
+    }
+    Ok(written)
+}
+
+/// One path component, safe on every filesystem.
+fn unique_part(part: &str) -> String {
+    let cleaned: String = part
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || "-_. ".contains(c) { c } else { '-' })
+        .collect();
+    let cleaned = cleaned.trim().to_string();
+    if cleaned.is_empty() { "unnamed".into() } else { cleaned }
 }
 
 fn snapshot_instructions(
@@ -428,7 +472,8 @@ pub fn snapshot(settings: &Settings, sidecar: &Path) -> Result<String, String> {
     }
 
     let hook_count = snapshot_hooks(&repo, &hook_groups, &project_dirs, sidecar, &mut manifest)?;
-    let instr_count = snapshot_instructions(&repo, &instr_groups, &project_dirs, &mut manifest)?;
+    let instr_count = snapshot_instructions(&repo, &instr_groups, &project_dirs, &mut manifest)?
+        + snapshot_memory(&repo, &memory::overview()?.stores, &mut manifest)?;
 
     let manifest_text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
     fs::write(repo.join("manifest.json"), manifest_text)
@@ -509,7 +554,6 @@ mod tests {
             imported_by: vec![],
             applies_to: vec![],
             imports: vec![],
-            memory: None,
             warnings: vec![],
         }
     }
@@ -538,13 +582,11 @@ mod tests {
                 .map(|p| p.to_string_lossy().replace('\\', "/"))
         };
         assert_eq!(dest(&project, ".claude/rules/a.md", "x").as_deref(), Some("/repo/instructions/projects/app/.claude/rules/a.md"));
-        assert_eq!(dest(&project, "auto memory/MEMORY.md", "x").as_deref(), Some("/repo/memory/projects/app/MEMORY.md"));
         assert_eq!(dest(&instr_group("user", "user"), "rules/x.md", "x").as_deref(), Some("/repo/instructions/user/rules/x.md"));
         assert_eq!(
             dest(&instr_group("parents", "parents"), "/w/CLAUDE.md", "/w/CLAUDE.md").as_deref(),
             Some("/repo/instructions/parents/-w/CLAUDE.md")
         );
-        assert_eq!(dest(&instr_group("memory-other", "m"), "C--x/memory/MEMORY.md", "x").as_deref(), Some("/repo/memory/other/C--x/memory/MEMORY.md"));
         assert_eq!(dest(&project, "../escape.md", "x"), None);
         assert_eq!(dest(&instr_group("project", "project:/unknown"), "CLAUDE.md", "x"), None);
         assert_eq!(dest(&instr_group("managed", "managed"), "CLAUDE.md", "x"), None);

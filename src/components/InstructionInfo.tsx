@@ -23,9 +23,6 @@ export default function InstructionInfo({
           {file.lines} lines · {formatBytes(file.bytes)}
         </span>
       </div>
-      {file.memory?.description && (
-        <div className="instr-info-row dim">{file.memory.description}</div>
-      )}
       {file.applies_to.length > 0 && (
         <div className="instr-info-row dim">Applies to: {file.applies_to.join(", ")}</div>
       )}

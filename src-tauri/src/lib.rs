@@ -5,6 +5,7 @@ mod git;
 mod hooks;
 mod install;
 mod instructions;
+mod memory;
 mod overrides;
 mod paths;
 mod settings;
@@ -200,6 +201,36 @@ fn instructions_set_auto_memory(project: Option<String>, enabled: bool) -> Resul
     instructions::set_auto_memory(project.as_deref(), enabled)
 }
 
+/// Walks every memory folder, so it runs off the UI thread.
+#[tauri::command]
+async fn memory_overview() -> Result<memory::MemoryOverview, String> {
+    tauri::async_runtime::spawn_blocking(memory::overview)
+        .await
+        .map_err(|e| format!("memory scan crashed: {e}"))?
+}
+
+#[tauri::command]
+fn memory_create(
+    dir: String,
+    name: String,
+    description: String,
+    kind: String,
+    body: String,
+    index: bool,
+) -> Result<String, String> {
+    memory::create_entry(&dir, &name, &description, &kind, &body, index)
+}
+
+#[tauri::command]
+fn memory_delete(path: String, from_index: bool) -> Result<String, String> {
+    memory::delete_entry(&path, from_index)
+}
+
+#[tauri::command]
+fn memory_index_entry(path: String) -> Result<String, String> {
+    memory::index_entry(&path)
+}
+
 #[tauri::command]
 fn ai_start_job(
     state: tauri::State<ai::JobState>,
@@ -265,6 +296,10 @@ pub fn run() {
             instructions_create,
             instructions_delete,
             instructions_set_auto_memory,
+            memory_overview,
+            memory_create,
+            memory_delete,
+            memory_index_entry,
             ai_start_job,
             ai_list_jobs,
             ai_job_output,

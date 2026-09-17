@@ -429,6 +429,55 @@ body,
 .badge.kind-parents { color: var(--text-dim); }
 .badge.kind-memory-other { color: var(--text-dim); }
 
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 10px 6px;
+}
+
+.chip {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 1px 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.chip:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.chip.on {
+  background: var(--bg-active);
+  color: var(--text);
+  border-color: var(--accent-dim);
+}
+
+.chip.info { color: var(--accent); }
+.chip.ok { color: var(--ok); }
+.chip.warn { color: var(--warn); }
+
+.chip-count {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.store-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 12px 6px;
+}
+
+.badge.kind-agent { color: var(--accent); border-color: #33506b; }
+.badge.kind-other { color: var(--text-dim); }
+
 /* ---- instruction details / startup ---- */
 .instr-info {
   margin: 0 14px 8px;

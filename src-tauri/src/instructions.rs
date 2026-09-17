@@ -1,5 +1,6 @@
-//! CLAUDE.md-style instruction files, rules, auto memory, and other agents'
-//! instruction files. See plans/instructions.md for the reference notes.
+//! CLAUDE.md-style instruction files, rules, and other agents' instruction
+//! files — the configuration you write for Claude. The notes Claude writes
+//! for itself live in `memory.rs`. See plans/instructions.md.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
@@ -19,8 +20,8 @@ use crate::paths::{claude_dir, home_dir, path_key, strip_verbatim};
 /// Claude Code skips larger instruction files entirely.
 const MAX_FILE: u64 = 4 * 1024 * 1024;
 /// Only this much of MEMORY.md loads at session start.
-const MEMORY_MAX_LINES: usize = 200;
-const MEMORY_MAX_BYTES: usize = 25 * 1024;
+pub(crate) const MEMORY_MAX_LINES: usize = 200;
+pub(crate) const MEMORY_MAX_BYTES: usize = 25 * 1024;
 /// Docs guidance for CLAUDE.md length.
 const RECOMMENDED_LINES: usize = 200;
 const IMPORT_DEPTH: usize = 4;
@@ -68,19 +69,12 @@ pub struct ImportRef {
     pub external: bool,
 }
 
-#[derive(Serialize, Clone, Default)]
-pub struct MemoryMeta {
-    pub name: Option<String>,
-    pub description: Option<String>,
-    pub kind: Option<String>,
-}
-
 #[derive(Serialize, Clone)]
 pub struct InstrFile {
     pub path: String,
     /// Display name relative to the group's root.
     pub label: String,
-    /// "claude" | "local" | "rule" | "nested" | "memory-index" | "memory-topic" | "other-agent"
+    /// "claude" | "local" | "rule" | "nested" | "other-agent"
     pub kind: String,
     /// "startup" | "on-demand" | "imported" | "never"
     pub loads: String,
@@ -96,7 +90,6 @@ pub struct InstrFile {
     /// For ancestor files: the projects they apply to.
     pub applies_to: Vec<String>,
     pub imports: Vec<ImportRef>,
-    pub memory: Option<MemoryMeta>,
     pub warnings: Vec<String>,
 }
 
@@ -127,7 +120,7 @@ pub struct AutoMemory {
 #[derive(Serialize, Clone)]
 pub struct InstrGroup {
     pub key: String,
-    /// "managed" | "user" | "project" | "parents" | "memory-other"
+    /// "managed" | "user" | "project" | "parents"
     pub kind: String,
     pub label: String,
     pub detail: String,
@@ -155,7 +148,7 @@ pub struct InstrOverview {
 // Small helpers
 // ---------------------------------------------------------------------------
 
-fn s(p: &Path) -> String {
+pub(crate) fn s(p: &Path) -> String {
     strip_verbatim(p).to_string_lossy().to_string()
 }
 
@@ -179,14 +172,14 @@ fn normalize(p: &Path) -> PathBuf {
 }
 
 /// True when `path` is `root` or inside it (case/separator-insensitive).
-fn under(path: &Path, root: &Path) -> bool {
+pub(crate) fn under(path: &Path, root: &Path) -> bool {
     let p = path_key(path);
     let r = path_key(root);
     let sep = if cfg!(windows) { '\\' } else { '/' };
     p == r || p.starts_with(&format!("{r}{sep}"))
 }
 
-fn canon(p: &Path) -> PathBuf {
+pub(crate) fn canon(p: &Path) -> PathBuf {
     p.canonicalize().map(|c| strip_verbatim(&c)).unwrap_or_else(|_| normalize(p))
 }
 
@@ -196,20 +189,20 @@ pub fn encode_project(p: &Path) -> String {
 }
 
 /// Nearest ancestor (or self) containing `.git`, else the path itself.
-fn git_root(p: &Path) -> PathBuf {
+pub(crate) fn git_root(p: &Path) -> PathBuf {
     p.ancestors()
         .find(|a| a.join(".git").exists())
         .map(Path::to_path_buf)
         .unwrap_or_else(|| p.to_path_buf())
 }
 
-struct Content {
-    bytes: u64,
-    lines: usize,
-    text: Option<String>,
+pub(crate) struct Content {
+    pub bytes: u64,
+    pub lines: usize,
+    pub text: Option<String>,
 }
 
-fn read_content(path: &Path) -> Content {
+pub(crate) fn read_content(path: &Path) -> Content {
     let bytes = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
     if bytes > MAX_FILE {
         return Content { bytes, lines: 0, text: None };
@@ -219,11 +212,11 @@ fn read_content(path: &Path) -> Content {
     Content { bytes, lines, text }
 }
 
-fn frontmatter(text: &str) -> Option<serde_yaml::Value> {
+pub(crate) fn frontmatter(text: &str) -> Option<serde_yaml::Value> {
     serde_yaml::from_str(&extract_frontmatter(text)?).ok()
 }
 
-fn yaml_str(v: &serde_yaml::Value, key: &str) -> Option<String> {
+pub(crate) fn yaml_str(v: &serde_yaml::Value, key: &str) -> Option<String> {
     v.get(key).and_then(|x| x.as_str()).map(str::to_string)
 }
 
@@ -239,7 +232,7 @@ fn rule_paths(text: &str) -> Vec<String> {
 }
 
 /// Bytes of MEMORY.md that load: the first 200 lines, capped at 25 KB.
-fn memory_loaded_bytes(text: &str) -> u64 {
+pub(crate) fn memory_loaded_bytes(text: &str) -> u64 {
     let mut end = 0usize;
     for (i, line) in text.split_inclusive('\n').enumerate() {
         if i >= MEMORY_MAX_LINES || end + line.len() > MEMORY_MAX_BYTES {
@@ -268,7 +261,7 @@ fn settings_strings(file: &Path, key: &str) -> Vec<String> {
 }
 
 /// A settings scope: (settings.json, settings.local.json) of a `.claude` dir.
-fn scope_files(claude_like: &Path) -> [PathBuf; 2] {
+pub(crate) fn scope_files(claude_like: &Path) -> [PathBuf; 2] {
     [claude_like.join("settings.json"), claude_like.join("settings.local.json")]
 }
 
@@ -322,7 +315,7 @@ fn env_disables_auto_memory() -> bool {
 
 /// Effective auto-memory state for a list of settings files, highest
 /// precedence first, each labelled for display.
-fn auto_memory_state(
+pub(crate) fn auto_memory_state(
     layers: &[(PathBuf, &str)],
     default_dir: PathBuf,
     home: &Path,
@@ -461,7 +454,7 @@ fn build_file(path: &Path, label: String, kind: &str, editable: bool, ctx: &Ctx)
     let text = content.text.as_deref().unwrap_or("");
     let mut warnings = Vec::new();
     let mut loads = match kind {
-        "claude" | "local" | "memory-index" => "startup",
+        "claude" | "local" => "startup",
         "rule" => "startup",
         "other-agent" => "never",
         _ => "on-demand",
@@ -484,22 +477,9 @@ fn build_file(path: &Path, label: String, kind: &str, editable: bool, ctx: &Ctx)
         warnings.push("imports files outside the project — Claude Code asks once before loading them".into());
     }
 
-    let memory = (kind == "memory-topic").then(|| {
-        let fm = frontmatter(text);
-        MemoryMeta {
-            name: fm.as_ref().and_then(|f| yaml_str(f, "name")),
-            description: fm.as_ref().and_then(|f| yaml_str(f, "description")),
-            kind: fm.as_ref().and_then(|f| yaml_str(f, "type")),
-        }
-    });
-
     if content.text.is_none() && content.bytes > MAX_FILE {
         warnings.push("over 4 MiB — Claude Code skips this file".into());
         loads = "never".into();
-    } else if kind == "memory-index" && memory_loaded_bytes(text) < content.bytes {
-        warnings.push(format!(
-            "only the first {MEMORY_MAX_LINES} lines / 25 KB load — the rest is dropped"
-        ));
     } else if matches!(kind, "claude" | "local" | "nested") && content.lines > RECOMMENDED_LINES {
         warnings.push(format!(
             "{} lines — the docs recommend under {RECOMMENDED_LINES} for good adherence",
@@ -526,12 +506,11 @@ fn build_file(path: &Path, label: String, kind: &str, editable: bool, ctx: &Ctx)
         imported_by: Vec::new(),
         applies_to: Vec::new(),
         imports,
-        memory,
         warnings,
     }
 }
 
-fn md_files(dir: &Path) -> Vec<PathBuf> {
+pub(crate) fn md_files(dir: &Path) -> Vec<PathBuf> {
     if !dir.is_dir() {
         return Vec::new();
     }
@@ -548,7 +527,7 @@ fn md_files(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
-fn rel_label(path: &Path, root: &Path) -> String {
+pub(crate) fn rel_label(path: &Path, root: &Path) -> String {
     path.strip_prefix(root)
         .map(|p| p.to_string_lossy().replace('\\', "/"))
         .unwrap_or_else(|_| s(path))
@@ -560,27 +539,6 @@ fn rule_files(rules_dir: &Path, root: &Path, ctx: &Ctx, editable: bool) -> Vec<I
         .iter()
         .map(|p| build_file(p, rel_label(p, root), "rule", editable, ctx))
         .collect()
-}
-
-/// Files of an auto-memory dir, labelled `prefix` + path relative to `label_root`.
-fn memory_files(dir: &Path, label_root: &Path, prefix: &str, ctx: &Ctx, enabled: bool) -> Vec<InstrFile> {
-    let mut out = Vec::new();
-    let label = |p: &Path| format!("{prefix}{}", rel_label(p, label_root));
-    let index = dir.join("MEMORY.md");
-    if index.is_file() {
-        let mut f = build_file(&index, label(&index), "memory-index", true, ctx);
-        if !enabled {
-            f.loads = "never".into();
-        }
-        out.push(f);
-    }
-    for p in md_files(dir) {
-        if path_key(&p) == path_key(&index) {
-            continue;
-        }
-        out.push(build_file(&p, label(&p), "memory-topic", true, ctx));
-    }
-    out
 }
 
 fn other_agent_files(root: &Path, specs: &[(&str, &str)], dirs: &[(&str, &str)], ctx: &Ctx) -> Vec<InstrFile> {
@@ -700,7 +658,7 @@ fn skip_nested(project: &Path, home: &Path) -> bool {
 }
 
 /// Registered projects that exist, deduplicated.
-fn projects() -> Vec<PathBuf> {
+pub(crate) fn projects() -> Vec<PathBuf> {
     let mut seen = HashSet::new();
     let mut out: Vec<PathBuf> = claude_project_paths()
         .into_iter()
@@ -711,7 +669,7 @@ fn projects() -> Vec<PathBuf> {
     out
 }
 
-fn project_label(p: &Path) -> String {
+pub(crate) fn project_label(p: &Path) -> String {
     if home_dir().map(|h| path_key(&h) == path_key(p)).unwrap_or(false) {
         return "Home folder (~)".into();
     }
@@ -848,10 +806,9 @@ pub fn overview(force: bool) -> Result<InstrOverview, String> {
     let mut user_layers = managed_layers.clone();
     user_layers.push((user_scope[1].clone(), "user settings.local.json"));
     user_layers.push((user_scope[0].clone(), "user settings.json"));
+    // Auto-memory *state* stays here (the Config tab shows it in the startup
+    // context); the notes themselves belong to the Memory tab.
     let user_mem = auto_memory_state(&user_layers, claude.join("projects"), &home);
-    if user_mem.custom_dir {
-        ufiles.extend(memory_files(Path::new(&user_mem.dir), Path::new(&user_mem.dir), "memory/", &uctx, user_mem.enabled));
-    }
     ufiles.extend(other_agent_files(&home, &USER_AGENT_FILES, &[], &uctx));
     let mut user_startup = Vec::new();
     let mut visited = HashSet::new();
@@ -881,7 +838,6 @@ pub fn overview(force: bool) -> Result<InstrOverview, String> {
 
     let project_keys: HashSet<String> = projects.iter().map(|p| path_key(p)).collect();
     let mut ancestors: BTreeMap<String, (PathBuf, Vec<String>)> = BTreeMap::new();
-    let mut claimed_memory: HashSet<String> = HashSet::new();
 
     for project in &projects {
         let pclaude = project.join(".claude");
@@ -932,10 +888,6 @@ pub fn overview(force: bool) -> Result<InstrOverview, String> {
             claude.join("projects").join(encode_project(&git_root(project))).join("memory"),
             &home,
         );
-        if mem.exists && !mem.custom_dir {
-            claimed_memory.insert(path_key(Path::new(&mem.dir)));
-            files.extend(memory_files(Path::new(&mem.dir), Path::new(&mem.dir), "auto memory/", &ctx, mem.enabled));
-        }
         files.extend(other_agent_files(project, &OTHER_AGENT_FILES, &OTHER_AGENT_DIRS, &ctx));
 
         // Startup context: what every session in this project gets.
@@ -1023,33 +975,6 @@ pub fn overview(force: bool) -> Result<InstrOverview, String> {
             detail: "CLAUDE.md files above your projects — loaded for every project below them".into(),
             project_dir: None,
             files: parent_files,
-            startup: Vec::new(),
-            auto_memory: None,
-            notes: Vec::new(),
-        });
-    }
-
-    // Auto memory that belongs to no registered project (old worktrees…).
-    let mut other = Vec::new();
-    if let Ok(rd) = fs::read_dir(claude.join("projects")) {
-        let mut dirs: Vec<PathBuf> = rd.filter_map(|e| e.ok()).map(|e| e.path().join("memory")).filter(|p| p.is_dir()).collect();
-        dirs.sort();
-        for d in dirs {
-            if claimed_memory.contains(&path_key(&d)) {
-                continue;
-            }
-            other.extend(memory_files(&d, &claude.join("projects"), "", &uctx, true));
-        }
-    }
-    let other = claim(other, &mut seen);
-    if !other.is_empty() {
-        groups.push(InstrGroup {
-            key: "memory-other".into(),
-            kind: "memory-other".into(),
-            label: "Other auto memory".into(),
-            detail: format!("{} — folders that match no registered project", s(&claude.join("projects"))),
-            project_dir: None,
-            files: other,
             startup: Vec::new(),
             auto_memory: None,
             notes: Vec::new(),
@@ -1464,10 +1389,7 @@ mod tests {
         let vendor = file(app, "vendor/CLAUDE.md");
         assert!(vendor.excluded);
         assert_eq!(vendor.loads, "never");
-        let index = app.files.iter().find(|f| f.kind == "memory-index").unwrap();
-        assert!(index.warnings[0].contains("first 200 lines"));
-        let topic = app.files.iter().find(|f| f.kind == "memory-topic").unwrap();
-        assert_eq!(topic.memory.as_ref().unwrap().kind.as_deref(), Some("user"));
+        assert!(app.files.iter().all(|f| !f.path.contains("projects")), "memory notes belong to the Memory tab");
 
         // Startup order: user, its import, user rules, parent folder, project, rules, local, memory.
         let labels: Vec<&str> = app.startup.iter().map(|e| e.label.as_str()).collect();
@@ -1490,8 +1412,6 @@ mod tests {
         // The home "project" adds nothing new (its files are the user's).
         assert!(ov.groups.iter().all(|g| g.label != "Home folder (~)"));
         assert!(ov.projects.iter().any(|p| p.label == "Home folder (~)"));
-        // The stray memory folder shows up separately.
-        assert!(group("memory-other").files.iter().any(|f| f.label.starts_with("C--old-worktree")));
 
         // Guard.
         assert!(is_allowed(&proj.join("AGENTS.md"), true));

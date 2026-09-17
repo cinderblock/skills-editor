@@ -7,13 +7,19 @@ import {
   hooksOverview,
   instructionsDelete,
   instructionsOverview,
+  memoryOverview,
   setSkillEnabled,
 } from "./api";
 import InstructionInfo from "./components/InstructionInfo";
 import InstructionsSidebar from "./components/InstructionsSidebar";
+import MemoryInfo from "./components/MemoryInfo";
+import MemorySidebar from "./components/MemorySidebar";
+import MemoryStoreView from "./components/MemoryStoreView";
 import NewInstructionDialog from "./components/NewInstructionDialog";
+import NewMemoryDialog from "./components/NewMemoryDialog";
 import StartupContext from "./components/StartupContext";
 import { findFile } from "./instructionsModel";
+import { findEntry, findIndex } from "./memoryModel";
 import AiTaskDialog, { type AiTarget } from "./components/AiTaskDialog";
 import EditorPane, { type EditorPaneHandle } from "./components/EditorPane";
 import HookEditor, { type HookEditorHandle } from "./components/HookEditor";
@@ -34,6 +40,9 @@ import type {
   InstrOverview,
   InstrSelection,
   JobInfo,
+  MemoryOverview,
+  MemorySelection,
+  MemoryStore,
   OpenFile,
   Skill,
   SkillGroup,
@@ -45,9 +54,14 @@ interface Confirm {
   actions: { label: string; kind?: "accent" | "danger"; run: () => void }[];
 }
 
-type View = "skills" | "hooks" | "memory";
+type View = "skills" | "hooks" | "config" | "memory";
 
-const VIEW_LABEL: Record<View, string> = { skills: "Skills", hooks: "Hooks", memory: "Memory" };
+const VIEW_LABEL: Record<View, string> = {
+  skills: "Skills",
+  hooks: "Hooks",
+  config: "Config",
+  memory: "Memory",
+};
 
 /**
  * A stand-in skill so hook scripts and instruction files can use the file
@@ -56,7 +70,7 @@ const VIEW_LABEL: Record<View, string> = { skills: "Skills", hooks: "Hooks", mem
 function standInFile(
   path: string,
   editable: boolean,
-  kind: "script" | "instruction",
+  kind: "script" | "instruction" | "memory",
   group: { key: string; label: string; detail: string } | null,
   name?: string,
 ): OpenFile {
@@ -89,7 +103,7 @@ function standInFile(
 }
 
 function instructionFile(group: InstrGroup, file: InstrFile): OpenFile {
-  return standInFile(file.path, file.editable, "instruction", group, file.memory?.name ?? file.label);
+  return standInFile(file.path, file.editable, "instruction", group, file.label);
 }
 
 export default function App() {
@@ -105,8 +119,13 @@ export default function App() {
   const [instrLoading, setInstrLoading] = useState(false);
   const [instrSel, setInstrSel] = useState<InstrSelection | null>(null);
   const [showNewInstr, setShowNewInstr] = useState(false);
+  const [mem, setMem] = useState<MemoryOverview | null>(null);
+  const [memError, setMemError] = useState<string | null>(null);
+  const [memLoading, setMemLoading] = useState(false);
+  const [memSel, setMemSel] = useState<MemorySelection | null>(null);
+  const [newMemoryStore, setNewMemoryStore] = useState<MemoryStore | null>(null);
   /** Which editor owns the main pane. */
-  const [main, setMain] = useState<"file" | "hook" | "startup">("file");
+  const [main, setMain] = useState<"file" | "hook" | "startup" | "store">("file");
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState("");
   const [jobs, setJobs] = useState<JobInfo[]>([]);
@@ -180,13 +199,29 @@ export default function App() {
     }
   }, []);
 
+  const refreshMem = useCallback(async (): Promise<MemoryOverview | null> => {
+    setMemLoading(true);
+    try {
+      const ov = await memoryOverview();
+      setMem(ov);
+      setMemError(null);
+      return ov;
+    } catch (e) {
+      setMemError(String(e));
+      return null;
+    } finally {
+      setMemLoading(false);
+    }
+  }, []);
+
   const refreshAll = useCallback(
     (force = false) => {
       void refresh();
       void refreshHooks();
       void refreshInstr(force);
+      void refreshMem();
     },
-    [refresh, refreshHooks, refreshInstr],
+    [refresh, refreshHooks, refreshInstr, refreshMem],
   );
 
   useEffect(() => {
@@ -307,6 +342,39 @@ export default function App() {
     [guard, instr],
   );
 
+  const openMemoryFile = useCallback(
+    (path: string, store: MemoryStore | null, name?: string) =>
+      guard(() => {
+        setMemSel({ kind: "note", path });
+        setFile(
+          standInFile(
+            path,
+            true,
+            "memory",
+            store ? { key: store.key, label: store.label, detail: store.dir } : null,
+            name,
+          ),
+        );
+        setMain("file");
+      }),
+    [guard],
+  );
+
+  const selectMemory = useCallback(
+    (sel: MemorySelection) => {
+      if (sel.kind === "store") {
+        guard(() => {
+          setMemSel(sel);
+          setMain("store");
+        });
+        return;
+      }
+      const hit = findEntry(mem?.stores ?? [], sel.path);
+      openMemoryFile(sel.path, hit?.store ?? null, hit?.entry.name);
+    },
+    [guard, mem, openMemoryFile],
+  );
+
   const deleteInstr = useCallback(
     (f: InstrFile) => {
       void instructionsDelete(f.path)
@@ -377,6 +445,10 @@ export default function App() {
   const startupGroup =
     instrSel?.kind === "startup" ? instr?.groups.find((g) => g.key === instrSel.group) ?? null : null;
   const openInstr = main === "file" && file?.kind === "instruction" ? findFile(instr, file.path) : null;
+  const memStore = memSel?.kind === "store" ? mem?.stores.find((s) => s.key === memSel.store) ?? null : null;
+  const openNote = main === "file" && file?.kind === "memory" ? findEntry(mem?.stores ?? [], file.path) : null;
+  const openMemIndex =
+    main === "file" && file?.kind === "memory" ? findIndex(mem?.stores ?? [], file.path) : null;
   const newInstrProject =
     instrSel?.kind === "startup"
       ? startupGroup?.project_dir ?? null
@@ -453,6 +525,15 @@ export default function App() {
               />
             )
           ) : view === "memory" ? (
+            <MemorySidebar
+              overview={mem}
+              error={memError}
+              loading={memLoading}
+              selection={main === "store" || (main === "file" && file?.kind === "memory") ? memSel : null}
+              onSelect={selectMemory}
+              onNew={setNewMemoryStore}
+            />
+          ) : view === "config" ? (
             <InstructionsSidebar
               overview={instr}
               error={instrError}
@@ -494,6 +575,15 @@ export default function App() {
             onDirtyChange={setDirty}
             onOpenScript={openScript}
           />
+        ) : main === "store" && memStore ? (
+          <MemoryStoreView
+            store={memStore}
+            onOpenNote={(path) => selectMemory({ kind: "note", path })}
+            onOpenIndex={(path) => openMemoryFile(path, memStore, "MEMORY.md")}
+            onNew={setNewMemoryStore}
+            onStatus={say}
+            onChanged={() => void refreshMem()}
+          />
         ) : main === "startup" && startupGroup ? (
           <StartupContext
             group={startupGroup}
@@ -515,16 +605,38 @@ export default function App() {
             }
             onSaved={(f) => {
               if (f.kind === "instruction") void refreshInstr(false);
+              if (f.kind === "memory") void refreshMem();
             }}
             info={
-              openInstr && (
+              openInstr ? (
                 <InstructionInfo
                   group={openInstr.group}
                   file={openInstr.file}
                   onOpenPath={(path) => selectInstr({ kind: "file", path })}
                   onDelete={deleteInstr}
                 />
-              )
+              ) : openNote ? (
+                <MemoryInfo
+                  store={openNote.store}
+                  entry={openNote.entry}
+                  onStatus={say}
+                  onChanged={() => void refreshMem()}
+                  onClosed={() => {
+                    setDirty(false);
+                    setFile(null);
+                    setMemSel(null);
+                  }}
+                />
+              ) : openMemIndex ? (
+                <div className="instr-info">
+                  <div className="instr-info-row">
+                    <span>
+                      The memory index for <strong>{openMemIndex.label}</strong>. Only its first 200 lines
+                      (or 25 KB) load at session start.
+                    </span>
+                  </div>
+                </div>
+              ) : null
             }
           />
         )}
@@ -550,6 +662,20 @@ export default function App() {
           onSaved={() => {
             say("Settings saved");
             refreshAll();
+          }}
+        />
+      )}
+      {newMemoryStore && mem && (
+        <NewMemoryDialog
+          overview={mem}
+          store={newMemoryStore}
+          onClose={() => setNewMemoryStore(null)}
+          onCreated={(path) => {
+            say("Note saved");
+            void refreshMem().then((ov) => {
+              const hit = findEntry(ov?.stores ?? [], path);
+              openMemoryFile(path, hit?.store ?? null, hit?.entry.name);
+            });
           }}
         />
       )}

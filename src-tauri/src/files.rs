@@ -13,6 +13,7 @@ fn check_allowed(path: &Path, settings: &Settings, write: bool) -> Result<(), St
     // Cheapest checks first; hook discovery only when needed.
     if within(allowed_roots(settings))
         || crate::instructions::is_allowed(path, write)
+        || crate::memory::is_allowed(path)
         || within(crate::hooks::allowed_paths(settings))
     {
         Ok(())

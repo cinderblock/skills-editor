@@ -5,6 +5,7 @@ import type {
   HooksOverview,
   InstrOverview,
   JobInfo,
+  MemoryOverview,
   Settings,
   SkillGroup,
   SyncStatus,
@@ -84,6 +85,24 @@ export const instructionsDelete = (path: string) => invoke<void>("instructions_d
 
 export const instructionsSetAutoMemory = (project: string | null, enabled: boolean) =>
   invoke<string>("instructions_set_auto_memory", { project, enabled });
+
+// ---- memory ----
+
+export const memoryOverview = () => invoke<MemoryOverview>("memory_overview");
+
+export const memoryCreate = (args: {
+  dir: string;
+  name: string;
+  description: string;
+  kind: string;
+  body: string;
+  index: boolean;
+}) => invoke<string>("memory_create", args);
+
+export const memoryDelete = (path: string, fromIndex: boolean) =>
+  invoke<string>("memory_delete", { path, fromIndex });
+
+export const memoryIndexEntry = (path: string) => invoke<string>("memory_index_entry", { path });
 
 /** Backend errors for stale writes start with this marker. */
 export const isConflict = (e: unknown) => String(e).includes("CONFLICT:");

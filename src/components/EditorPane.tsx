@@ -26,8 +26,10 @@ import { readSkillFile, writeSkillFile } from "../api";
 import {
   joinFrontmatter,
   readFields,
+  readMemoryType,
   splitFrontmatter,
   updateFields,
+  updateMemoryType,
 } from "../frontmatter";
 import type { OpenFile, Skill } from "../types";
 
@@ -97,7 +99,11 @@ interface Props {
 const KIND_TITLE: Record<string, string> = {
   script: "Hook script",
   instruction: "Instructions",
+  memory: "Memory",
 };
+
+/** Kept in step with memory.rs MEMORY_TYPES. */
+const MEMORY_TYPES = ["user", "feedback", "project", "reference"];
 
 const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
   { file, reloadToken, onStatus, onDirtyChange, onDeleteSkill, onToggleDisabled, onAiSelection, info, onSaved },
@@ -249,9 +255,11 @@ const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
   }
 
   const isSkillMd = file.path.replace(/\\/g, "/").endsWith("/SKILL.md");
+  const isMemoryNote = file.kind === "memory" && !file.path.replace(/\\/g, "/").endsWith("/MEMORY.md");
   const { frontmatter, body } = splitFrontmatter(text);
-  const fields = readFields(frontmatter);
-  const structured = isSkillMd && !rawMode && frontmatter !== null;
+  const fields = readFields(frontmatter, isMemoryNote ? ["type"] : []);
+  const memoryType = isMemoryNote ? readMemoryType(frontmatter) : "";
+  const structured = (isSkillMd || isMemoryNote) && !rawMode && frontmatter !== null;
   const readOnly = !file.skill.editable;
   const standIn = !!file.kind && file.kind !== "skill";
   const skillActions = !readOnly && !standIn;
@@ -279,7 +287,7 @@ const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
               AI edit selection
             </button>
           )}
-          {isSkillMd && frontmatter !== null && (
+          {(isSkillMd || isMemoryNote) && frontmatter !== null && (
             <button className="btn" onClick={() => setRawMode(!rawMode)}>
               {rawMode ? "Structured view" : "Raw view"}
             </button>
@@ -352,6 +360,27 @@ const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
               }
             />
           </label>
+          {isMemoryNote && (
+            <label className="fm-field">
+              <span>type</span>
+              <select
+                value={memoryType}
+                disabled={readOnly}
+                onChange={(e) =>
+                  setText(joinFrontmatter(updateMemoryType(frontmatter, e.target.value), body))
+                }
+              >
+                {!MEMORY_TYPES.includes(memoryType) && (
+                  <option value={memoryType}>{memoryType || "(none)"}</option>
+                )}
+                {MEMORY_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {fields.restSummary && (
             <div className="fm-rest">
               <span>other frontmatter (edit in raw view)</span>

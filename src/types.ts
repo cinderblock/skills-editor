@@ -63,8 +63,8 @@ export interface OpenFile {
    */
   skill: Skill;
   group: SkillGroup;
-  /** Defaults to "skill". Scripts and instruction files hide skill-only actions. */
-  kind?: "skill" | "script" | "instruction";
+  /** Defaults to "skill". Everything else hides skill-only actions. */
+  kind?: "skill" | "script" | "instruction" | "memory";
 }
 
 // ---- instructions & memory ----
@@ -101,9 +101,74 @@ export interface InstrFile {
   imported_by: string[];
   applies_to: string[];
   imports: InstrImport[];
-  memory: { name: string | null; description: string | null; kind: string | null } | null;
   warnings: string[];
 }
+
+// ---- memory (the notes Claude writes itself) ----
+
+export interface MemoryEntry {
+  path: string;
+  rel: string;
+  name: string;
+  description: string | null;
+  kind: string | null;
+  modified: string | null;
+  mtime: number;
+  bytes: number;
+  lines: number;
+  in_index: boolean;
+  has_frontmatter: boolean;
+}
+
+export interface IndexLink {
+  title: string;
+  target: string;
+  path: string;
+  exists: boolean;
+}
+
+export interface MemoryIndex {
+  path: string;
+  exists: boolean;
+  bytes: number;
+  lines: number;
+  loaded_bytes: number;
+  truncated: boolean;
+  links: IndexLink[];
+}
+
+export interface AgentInfo {
+  name: string;
+  scope: string;
+  declared: boolean;
+  file: string | null;
+}
+
+export interface MemoryStore {
+  key: string;
+  kind: "project" | "user" | "agent" | "other";
+  label: string;
+  dir: string;
+  exists: boolean;
+  project_dir: string | null;
+  enabled: boolean;
+  enabled_source: string;
+  custom_dir: boolean;
+  agent: AgentInfo | null;
+  index: MemoryIndex;
+  entries: MemoryEntry[];
+  warnings: string[];
+}
+
+export interface MemoryOverview {
+  stores: MemoryStore[];
+  types: string[];
+}
+
+/** What the Memory view's main pane shows. */
+export type MemorySelection =
+  | { kind: "note"; path: string }
+  | { kind: "store"; store: string };
 
 export interface StartupEntry {
   path: string;
@@ -125,7 +190,7 @@ export interface AutoMemoryState {
 
 export interface InstrGroup {
   key: string;
-  kind: "managed" | "user" | "project" | "parents" | "memory-other";
+  kind: "managed" | "user" | "project" | "parents";
   label: string;
   detail: string;
   project_dir: string | null;

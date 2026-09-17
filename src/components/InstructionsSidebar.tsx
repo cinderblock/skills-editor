@@ -16,13 +16,12 @@ const KIND_BADGE: Record<InstrGroup["kind"], string> = {
   user: "user",
   project: "project",
   parents: "parents",
-  "memory-other": "memory",
 };
 
-const COLLAPSED_BY_DEFAULT = new Set<InstrGroup["kind"]>(["memory-other"]);
-const SECTION_ORDER: Section[] = ["instructions", "rules", "nested", "memory", "other"];
-/** Sections with many small files start folded inside an open group. */
-const FOLDED_SECTIONS = new Set<Section>(["memory"]);
+const COLLAPSED_BY_DEFAULT = new Set<InstrGroup["kind"]>(["parents"]);
+const SECTION_ORDER: Section[] = ["instructions", "rules", "nested", "other"];
+/** Sections with many files start folded inside an open group. */
+const FOLDED_SECTIONS = new Set<Section>(["nested"]);
 
 function GroupBody({
   group,
@@ -45,7 +44,6 @@ function GroupBody({
     return m;
   }, [group.files]);
   const total = startupTotal(group.startup);
-  const mem = group.auto_memory;
 
   return (
     <>
@@ -81,7 +79,6 @@ function GroupBody({
                   <span className="chevron">{isOpen ? "▾" : "▸"}</span>
                   {SECTION_TITLE[section]}
                   <span className="instr-section-count">{files.length}</span>
-                  {mem && !mem.enabled && <span className="badge disabled">off</span>}
                 </button>
               ) : (
                 <div className="instr-section">{SECTION_TITLE[section]}</div>
@@ -93,7 +90,7 @@ function GroupBody({
                   className={`instr-row${selection?.kind === "file" && selection.path === f.path ? " selected" : ""}${f.loads === "never" ? " dim" : ""}`}
                   onClick={() => onSelect({ kind: "file", path: f.path })}
                 >
-                  <span className="instr-name">{f.memory?.name ?? f.label}</span>
+                  <span className="instr-name">{f.label}</span>
                   {fileBadges(f).map((b) => (
                     <span key={b.text} className={`badge ${b.tone}`}>
                       {b.text}

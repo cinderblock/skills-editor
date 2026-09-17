@@ -26,7 +26,6 @@ const file = (over: Partial<InstrFile>): InstrFile => ({
   imported_by: [],
   applies_to: [],
   imports: [],
-  memory: null,
   warnings: [],
   ...over,
 });
@@ -62,7 +61,6 @@ test("badges put exclusion and load state first", () => {
   expect(fileBadges(file({ kind: "other-agent", loads: "never", agent: "Gemini CLI" })).map((b) => b.text)).toEqual(["Gemini CLI"]);
   expect(fileBadges(file({ kind: "other-agent", loads: "imported", agent: "Codex" }))[0].text).toBe("imported");
   expect(fileBadges(file({ warnings: ["x"], editable: false })).map((b) => b.text)).toEqual(["⚠", "read-only"]);
-  expect(fileBadges(file({ kind: "memory-topic", loads: "on-demand", memory: { name: "n", description: null, kind: "feedback" } })).map((b) => b.text)).toEqual(["on demand", "feedback"]);
 });
 
 test("load explanations", () => {
@@ -72,7 +70,6 @@ test("load explanations", () => {
   expect(loadsText(file({ kind: "other-agent", loads: "imported", imported_by: ["CLAUDE.md"] }))).toContain("CLAUDE.md imports it");
   expect(loadsText(file({ kind: "other-agent", loads: "never", label: "AGENTS.md" }))).toContain("@AGENTS.md");
   expect(loadsText(file({ excluded: true, loads: "never" }))).toContain("claudeMdExcludes");
-  expect(loadsText(file({ kind: "memory-index" }))).toContain("200 lines");
 });
 
 test("sections", () => {
@@ -80,20 +77,19 @@ test("sections", () => {
   expect(sectionOf(file({ kind: "rule", label: "rules/a.md" }))).toBe("rules");
   expect(sectionOf(file({ kind: "rule", label: "pkg/.claude/rules/a.md" }))).toBe("nested");
   expect(sectionOf(file({ kind: "nested" }))).toBe("nested");
-  expect(sectionOf(file({ kind: "memory-topic" }))).toBe("memory");
   expect(sectionOf(file({ kind: "other-agent" }))).toBe("other");
   expect(sectionOf(file({ kind: "local" }))).toBe("instructions");
 });
 
 test("filter keeps matching groups whole and trims others", () => {
   const groups = [
-    group("app", [file({ label: "CLAUDE.md" }), file({ label: "auto memory/x.md", memory: { name: "deploy notes", description: null, kind: null } })]),
+    group("app", [file({ label: "CLAUDE.md" }), file({ label: "deploy-notes.md" })]),
     group("deploy-tool", [file({ label: "CLAUDE.md" })]),
     group("other", [file({ label: "CLAUDE.md" })]),
   ];
   const out = filterGroups(groups, "DEPLOY");
   expect(out.map((g) => g.label)).toEqual(["app", "deploy-tool"]);
-  expect(out[0].files.map((f) => f.label)).toEqual(["auto memory/x.md"]);
+  expect(out[0].files.map((f) => f.label)).toEqual(["deploy-notes.md"]);
   expect(out[1].files.length).toBe(1);
   expect(filterGroups(groups, "  ")).toBe(groups);
 });
