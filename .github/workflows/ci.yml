@@ -55,5 +55,8 @@ jobs:
       # Split so a failure says whether it was the build or the tests.
       - name: Compile tests
         run: cargo test --manifest-path src-tauri/Cargo.toml --no-run
+      # One at a time with output, so a hang names the test that hung; the
+      # step timeout keeps the runner alive to upload the log.
       - name: Run tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml -- --nocapture
+        timeout-minutes: 10
+        run: cargo test --manifest-path src-tauri/Cargo.toml -- --test-threads=1 --nocapture
