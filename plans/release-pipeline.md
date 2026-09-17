@@ -86,6 +86,19 @@ tag-triggered release workflow that builds a signed Windows installer, and wire
 
 ## Findings / gotchas
 
+- **Never signal a process group to kill a child** (2026-09-17). The hook
+  test runner's timeout path ran `kill -KILL -<pid>`; a negative PID means
+  "the process group", and if the child isn't the group leader that reaches
+  whatever owns the group. On the Linux CI runner it killed the runner agent:
+  the job failed at exactly 48 minutes (GitHub's lost-communication timeout)
+  with **no logs, no failing step, and step `timeout-minutes` never firing** —
+  because nothing was alive to enforce or upload them. macOS never reproduced
+  it (BSD `kill` rejects that argument form), so it looked like flaky Linux
+  infrastructure. Fix: `pkill -KILL -P <pid>` then `child.kill()`.
+  Diagnosis technique that worked: split the CI step (compile vs run, then
+  subprocess tests vs the rest) — the *step list* still reports progress even
+  when logs are lost.
+
 - Inherited from claude-usage (don't relearn):
   - filter-repo hard-resets a non-bare worktree → never run it in the main
     repo. Never fetch the original repo into the rewrite clone.
