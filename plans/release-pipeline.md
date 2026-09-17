@@ -31,9 +31,13 @@ tag-triggered release workflow that builds a signed Windows installer, and wire
 - **Rewrite mechanics:** temp clone + `git filter-repo --replace-text`, then
   swap refs in the main repo with `git reset --mixed` (never `--hard`). Backup
   branch + safety stash first.
-- **Windows-only release artifacts.** The frontend builds skill file paths with
-  `\` separators, so macOS/Linux builds would compile but misbehave. Revisit
-  when paths are made platform-neutral.
+- **All three platforms** (user, 2026-09-17). The old Windows-only decision
+  was based on the frontend joining paths with `\`; that's now a shared
+  `src/paths.ts` helper (separator taken from the path), and CI compiles and
+  tests on Windows, macOS and Linux so it can't rot again.
+- **macOS ships unsigned** (user, 2026-09-17): no Apple Developer ID, so
+  Gatekeeper warns on first open. Revisit if that becomes annoying —
+  notarization needs a paid account plus secrets in the workflow.
 - **Releases only from CI** (global rule). The tag is pushed only when the
   user explicitly asks for a release; v0.1.0 and v0.2.0 were both released
   that way.

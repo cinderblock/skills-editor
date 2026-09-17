@@ -9,9 +9,17 @@ layer is designed to grow to other agents.
 
 ## Install
 
-Download the latest `Skills Editor_<version>_x64-setup.exe` from
-[Releases](https://github.com/cinderblock/skills-editor/releases/latest) and run
-it. Windows is the only supported platform for now.
+Grab the build for your platform from
+[Releases](https://github.com/cinderblock/skills-editor/releases/latest):
+
+- **Windows** — `Skills Editor_<version>_x64-setup.exe` (or the `.msi`).
+- **macOS** — `Skills Editor_<version>_universal.dmg` (Apple Silicon and
+  Intel). The build isn't Apple-signed, so the first open needs
+  right-click → **Open**, or `xattr -dr com.apple.quarantine "/Applications/Skills Editor.app"`.
+- **Linux** — `.AppImage` (self-updating), or the `.deb` / `.rpm` package.
+
+Windows is the platform it's developed and tested on; macOS and Linux builds
+come from the same CI and pass the same tests, but haven't been run by hand.
 
 The app keeps itself up to date: it checks GitHub Releases shortly after launch
 and every few hours, and shows a banner when a new version is out. **Install &

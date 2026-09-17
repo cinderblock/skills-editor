@@ -31,6 +31,7 @@ import {
   updateFields,
   updateMemoryType,
 } from "../frontmatter";
+import { relativeTo } from "../paths";
 import type { OpenFile, Skill } from "../types";
 
 function languageFor(path: string): Extension[] {
@@ -263,9 +264,7 @@ const EditorPane = forwardRef<EditorPaneHandle, Props>(function EditorPane(
   const readOnly = !file.skill.editable;
   const standIn = !!file.kind && file.kind !== "skill";
   const skillActions = !readOnly && !standIn;
-  const relPath = file.path.startsWith(file.skill.dir)
-    ? file.path.slice(file.skill.dir.length + 1)
-    : file.path;
+  const relPath = relativeTo(file.path, file.skill.dir);
 
   return (
     <div className="editor-pane">

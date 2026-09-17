@@ -1374,8 +1374,8 @@ fn buf_text(buf: &SharedBuf) -> String {
     s
 }
 
-/// Kill a hook and everything it started (Git Bash's bash.exe is a wrapper
-/// around a second process).
+/// Kill a hook and everything it started: a shell usually has children, and
+/// Git Bash's bash.exe is itself a wrapper around a second process.
 fn kill_tree(child: &mut std::process::Child) {
     #[cfg(windows)]
     {
@@ -1384,6 +1384,17 @@ fn kill_tree(child: &mut std::process::Child) {
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         let _ = hide_console(&mut tk).status();
+    }
+    // The child leads its own process group (see run_test), so a negative PID
+    // signals the whole group.
+    #[cfg(unix)]
+    {
+        let mut kill = Command::new("kill");
+        let _ = kill
+            .args(["-KILL", &format!("-{}", child.id())])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
     }
     let _ = child.kill();
 }
@@ -1432,6 +1443,12 @@ pub fn run_test(req: TestRequest) -> Result<TestResult, String> {
         .stderr(Stdio::piped());
     if let Some(pr) = &req.plugin_root {
         cmd.env("CLAUDE_PLUGIN_ROOT", pr);
+    }
+    // Its own process group, so a timeout can take the shell's children with it.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
     }
 
     let started = Instant::now();

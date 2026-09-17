@@ -17,15 +17,28 @@ jobs:
       - run: bun run build
 
   rust:
-    # Windows is the only supported platform (see README).
-    runs-on: windows-latest
+    # Every platform we publish for, so portability doesn't rot.
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest, macos-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Linux build dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libxdo-dev build-essential curl wget file libssl-dev
+
       - uses: oven-sh/setup-bun@v2
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          key: ${{ matrix.platform }}
       # tauri::generate_context! embeds the frontend at compile time, so the
       # dist directory must exist even for `cargo test`.
       - run: bun install --frozen-lockfile

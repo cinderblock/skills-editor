@@ -20,6 +20,7 @@ import NewMemoryDialog from "./components/NewMemoryDialog";
 import StartupContext from "./components/StartupContext";
 import { findFile } from "./instructionsModel";
 import { findEntry, findIndex } from "./memoryModel";
+import { baseName, dirName } from "./paths";
 import AiTaskDialog, { type AiTarget } from "./components/AiTaskDialog";
 import EditorPane, { type EditorPaneHandle } from "./components/EditorPane";
 import HookEditor, { type HookEditorHandle } from "./components/HookEditor";
@@ -74,9 +75,8 @@ function standInFile(
   group: { key: string; label: string; detail: string } | null,
   name?: string,
 ): OpenFile {
-  const sep = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
-  const dir = path.slice(0, sep);
-  const base = path.slice(sep + 1);
+  const dir = dirName(path);
+  const base = baseName(path);
   const skill: Skill = {
     id: path,
     name: name ?? base,

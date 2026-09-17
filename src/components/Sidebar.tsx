@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { isUnder, joinPath } from "../paths";
 import type { OpenFile, Skill, SkillGroup } from "../types";
 
 interface TreeNode {
@@ -91,7 +92,7 @@ function FileNode({
   onOpen: (file: OpenFile) => void;
 }) {
   const [open, setOpen] = useState(true);
-  const abs = `${skill.dir}\\${node.path.replace(/\//g, "\\")}`;
+  const abs = joinPath(skill.dir, node.path);
   if (node.isDir) {
     return (
       <div>
@@ -141,8 +142,7 @@ function SkillNode({
 }) {
   const [expanded, setExpanded] = useState(false);
   const tree = useMemo(() => buildTree(skill.files), [skill.files]);
-  const isSelected =
-    selectedPath !== null && selectedPath.startsWith(skill.dir + "\\");
+  const isSelected = isUnder(selectedPath, skill.dir);
   return (
     <div className="skill-node">
       <div className={`skill-row${isSelected ? " selected" : ""}`}>

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { aiStartJob } from "../api";
+import { relativeTo } from "../paths";
 import type { OpenFile, Skill, SkillGroup } from "../types";
 
 export interface AiTarget {
@@ -22,9 +23,7 @@ const RESPONSE_FORMAT = [
 ].join("\n");
 
 function selectionPrompt(file: OpenFile, selection: string, request: string): string {
-  const rel = file.path.startsWith(file.skill.dir)
-    ? file.path.slice(file.skill.dir.length + 1).replace(/\\/g, "/")
-    : file.path;
+  const rel = relativeTo(file.path, file.skill.dir);
   return [
     `Read the file ${rel} in the current working directory.`,
     "",
